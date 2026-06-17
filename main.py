@@ -1,12 +1,3 @@
-import subprocess
-import sys
-
-try:
-    import requests
-except ModuleNotFoundError:
-    print("Библиотека requests не найдена. Ставлю напрямую в текущее окружение...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "requests"])
-    print("Библиотека requests успешно установлена!")
 import gradio as gr
 
 
