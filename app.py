@@ -1,6 +1,6 @@
 import gradio as gr
-from processors.layer_separation import separation_layers
-from processors.depth_map import depth_map
+from processors.layer_separation.layer_separation import separation_layers
+from processors.depth_map.depth_map import depth_map
 
 
 with gr.Blocks(title="AI Video Processor") as demo:
