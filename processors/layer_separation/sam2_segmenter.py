@@ -1,55 +1,43 @@
 import torch
-import numpy as np
-import sys
 import os
 
-from sam_facebook_repo.sam2.build_sam import build_sam2
-from sam_facebook_repo.sam2.sam2_image_predictor import SAM2ImagePredictor
+# Импортируем специализированный билдер для видео-предиктора
+from sam_facebook_repo.sam2.build_sam import build_sam2_video_predictor
 
-# Импортируем инструмент Hydra для ручной настройки путей поиска
 from hydra.core.global_hydra import GlobalHydra
 from hydra import initialize_config_dir
+
 
 class SAM2Segmenter:
 
     def __init__(self, checkpoint_path: str):
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        # Вот этой строки у тебя сейчас не хватает внутри метода:
         model_cfg = "sam2.1/sam2.1_hiera_t.yaml"
 
-        # Вычисляем абсолютный путь к папке с конфигами внутри sam_facebook_repo
-        current_dir = os.path.dirname(os.path.abspath(__file__))  # processors/layer_separation
-        project_root = os.path.abspath(os.path.join(current_dir, "..", ".."))  # AI-video-processor
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.abspath(os.path.join(current_dir, "..", ".."))
         config_dir = os.path.join(project_root, "sam_facebook_repo", "sam2", "configs")
 
-        # Инициализируем Hydra вручную
         if GlobalHydra.instance().is_initialized():
             GlobalHydra.instance().clear()
 
         with initialize_config_dir(config_dir=config_dir, version_base="1.2"):
-            # Теперь model_cfg объявлена выше и успешно передастся в функцию
-            sam2_model = build_sam2(model_cfg, checkpoint_path, device=device)
+            self.predictor = build_sam2_video_predictor(model_cfg, checkpoint_path, device=self.device)
 
-        self.predictor = SAM2ImagePredictor(sam2_model)
-        self.device = device
+    def process_video_tracking(self, video_path: str):
+        inference_state = self.predictor.init_state(video_path=video_path)
 
-    def segment(self, frame):
-        """
-        frame: numpy array (BGR из OpenCV)
-        return: list[np.ndarray] masks
-        """
+        self.predictor.reset_state(inference_state)
 
-        # Добавляем .copy(), чтобы сделать массив непрерывным в памяти
-        frame_rgb = frame[:, :, ::-1].copy()
-
-        self.predictor.set_image(frame_rgb)
-
-        # Автоматическая сегментация
-        masks, scores, logits = self.predictor.predict(
-            point_coords=None,
-            point_labels=None,
-            multimask_output=True
+        # здесь точка-заглушка, потом нужно передавать координаты интересующего объекта
+        self.predictor.add_new_points_or_box(
+            inference_state=inference_state,
+            frame_idx=0,
+            obj_id=1,
+            points=[[300, 300]],
+            labels=[1]
         )
 
-        return masks
+        video_segments = self.predictor.propagate_in_video(inference_state)
+        return video_segments, inference_state
