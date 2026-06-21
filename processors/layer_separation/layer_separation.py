@@ -2,6 +2,7 @@ import os
 import cv2
 import numpy as np
 import time
+import shutil
 from processors.layer_separation.sam2_segmenter import SAM2Segmenter
 
 
@@ -16,7 +17,6 @@ def separation_layers(video_path: str) -> list[str]:
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
     output_dir = r"C:\Users\dasha\Desktop\unik\practice integral\AI-video-processor\processors\layer_separation\outputs"
     os.makedirs(output_dir, exist_ok=True)
@@ -24,65 +24,90 @@ def separation_layers(video_path: str) -> list[str]:
     base_name = os.path.basename(video_path)
     name, ext = os.path.splitext(base_name)
 
-    # Список для хранения объектов VideoWriter и путей к файлам
+    # Читаем все кадры в память CPU (или временный массив), чтобы нарезать на чанки
+    all_frames = []
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+        all_frames.append(frame)
+    cap.release()
+
+    total_frames = len(all_frames)
+    print(f"\n[START] Всего кадров в видео: {total_frames}")
+
+    CHUNK_SIZE = 70
+    print(f"Видео будет обработано чанками по {CHUNK_SIZE} кадров.")
+
     video_writers = []
     output_paths = []
-
-    print(f"\n[START] Начинается обработка видео.")
-    print(f"Всего кадров для обработки: {total_frames}\n")
-
-    frame_idx = 0
     start_time = time.time()
 
+    temp_chunk_dir = os.path.join(output_dir, f"temp_chunk_{name}")
+
     try:
-        while cap.isOpened():
-            frame_start = time.time()
+        for chunk_start_idx in range(0, total_frames, CHUNK_SIZE):
+            chunk_end_idx = min(chunk_start_idx + CHUNK_SIZE, total_frames)
+            print(f"\n--- Обработка чанка кадров: {chunk_start_idx} - {chunk_end_idx} ---")
 
-            ret, frame = cap.read()
-            if not ret:
-                break  # Конец видео
+            # Пересоздаем чистую временную папку для кадров текущего чанка
+            if os.path.exists(temp_chunk_dir):
+                shutil.rmtree(temp_chunk_dir)
+            os.makedirs(temp_chunk_dir, exist_ok=True)
 
-            frame_idx += 1
-            masks = segmenter.segment(frame)
+            # Сохраняем во временную папку только кадры текущего чанка
+            for i, frame_global_idx in enumerate(range(chunk_start_idx, chunk_end_idx)):
+                frame_name = f"{i:05d}.jpg"
+                cv2.imwrite(os.path.join(temp_chunk_dir, frame_name), all_frames[frame_global_idx],
+                            [int(cv2.IMWRITE_JPEG_QUALITY), 90])
 
-            num_masks = len(masks)
+            # Запускаем трекинг для текущего чанка
+            video_segments, inference_state = segmenter.process_video_tracking(temp_chunk_dir)
 
-            # Динамически создаем VideoWriter для новых масок, если их больше, чем было раньше
-            while len(video_writers) < num_masks:
-                mask_idx = len(video_writers) + 1
-                out_path = os.path.join(output_dir, f"{name}_mask_{mask_idx}{ext}")
-                fourcc = cv2.VideoWriter_fourcc(*'avc1')
+            # Переносим маски из чанка в VideoWriter
+            for out_frame_idx, out_obj_ids, out_mask_logits in video_segments:
+                num_masks = len(out_obj_ids)
 
-                writer = cv2.VideoWriter(out_path, fourcc, fps, (width, height))
-                video_writers.append(writer)
-                output_paths.append(out_path)
-                print(f"[INFO] Создан новый поток записи для маски №{mask_idx}")
+                # Создаем VideoWriter только один раз при обнаружении первой маски первого чанка
+                while len(video_writers) < num_masks:
+                    mask_idx = len(video_writers) + 1
+                    out_path = os.path.join(output_dir, f"{name}_mask_{mask_idx}{ext}")
+                    fourcc = cv2.VideoWriter_fourcc(*'avc1')
 
-            # Записываем каждую маску в свой файл
-            for i in range(len(video_writers)):
-                mask_frame = np.zeros((height, width, 3), dtype=np.uint8)
+                    writer = cv2.VideoWriter(out_path, fourcc, fps, (width, height))
+                    video_writers.append(writer)
+                    output_paths.append(out_path)
+                    print(f"Создан поток записи для объекта №{mask_idx}")
 
-                # Если для этого индекса в текущем кадре есть маска — рисуем её
-                if i < num_masks:
-                    mask_data = masks[i].astype(np.uint8) * 255
-                    mask_frame = cv2.merge([mask_data, mask_data, mask_data])
+                # Записываем кадр-маску в видео
+                for i in range(len(video_writers)):
+                    mask_frame = np.zeros((height, width, 3), dtype=np.uint8)
 
-                video_writers[i].write(mask_frame)
+                    if i < num_masks:
+                        mask_logits = out_mask_logits[i][0].cpu().numpy()
+                        mask_data = (mask_logits > 0.0).astype(np.uint8) * 255
+                        mask_frame = cv2.merge([mask_data, mask_data, mask_data])
 
-            percent = (frame_idx / total_frames) * 100 if total_frames > 0 else 0
-            frame_duration = time.time() - frame_start
-            print(
-                f"[Прогресс] Кадр {frame_idx}/{total_frames} ({percent:.1f}%) | Время: {frame_duration:.2f} сек. | Найдено масок: {num_masks}")
+                    video_writers[i].write(mask_frame)
+
+                global_frame_num = chunk_start_idx + out_frame_idx
+                percent = (global_frame_num / total_frames) * 100
+                print(
+                    f"[Прогресс] Кадр {global_frame_num}/{total_frames} ({percent:.1f}%) | Объявлено масок: {num_masks}")
+
+            # Обязательно очищаем контекст этого чанка перед следующим, чтобы сбросить VRAM
+            segmenter.predictor.reset_state(inference_state)
+            del inference_state
+            del video_segments
 
     finally:
-        cap.release()
         for writer in video_writers:
             writer.release()
 
-    total_duration = time.time() - start_time
-    print(f"\nОбработка завершена успешно!")
-    print(f"Затрачено времени всего: {total_duration:.1f} сек.")
-    print(f"Сохранено слоев-масок: {len(output_paths)}")
+        if os.path.exists(temp_chunk_dir):
+            shutil.rmtree(temp_chunk_dir)
+            print(f"\n[INFO] Временная папка чанков удалена.")
 
-    # Если масок вообще не было найдено, вернем пустой список
+    total_duration = time.time() - start_time
+    print(f"Обработка завершена! Затрачено времени: {total_duration:.1f} сек.")
     return output_paths
