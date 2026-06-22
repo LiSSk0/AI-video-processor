@@ -2,9 +2,8 @@ import torch
 import os
 import numpy as np
 import cv2
-import gc  # Импортируем сборщик мусора
+import gc
 
-# Импортируем оба билдера
 from sam_facebook_repo.sam2.build_sam import build_sam2_video_predictor, build_sam2
 from sam_facebook_repo.sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 

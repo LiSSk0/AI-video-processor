@@ -1,9 +1,11 @@
 import gradio as gr
 import cv2
-import os
 import numpy as np
-from processors.layer_separation.layer_separation import separation_layers
-from processors.depth_map.depth_map import depth_map
+from processors.layer_separation.layer_separation import LayerSeparationProcessor
+from processors.depth_map.depth_map import depth_map  # Временно старая, пока коллега не обновит
+
+# Инициализируем процессор слоев один раз при запуске приложения
+layer_processor = LayerSeparationProcessor()
 
 with gr.Blocks(title="AI Video Processor") as demo:
     gr.Markdown("### AI Video Processor")
@@ -17,8 +19,6 @@ with gr.Blocks(title="AI Video Processor") as demo:
                 split_btn = gr.Button("Separation into layers", variant="primary")
                 depth_btn = gr.Button("Building a depth map", variant="primary")
 
-            # Редактор кадра: изначально скрыт. Появляется только при выборе слоев.
-            # Настраиваем супер-тонкую красную кисть (size=1)
             first_frame_editor = gr.ImageEditor(
                 label="Кликните точно по объекту (красный маркер)",
                 type="numpy",
@@ -26,10 +26,9 @@ with gr.Blocks(title="AI Video Processor") as demo:
                 visible=False,
                 brush={"colors": ["#FF0000"], "default_size": 1},
                 eraser=False,
-                sources=[]  # Отключаем лишние веб-камеры и загрузку файлов
+                sources=[]
             )
 
-            # Кнопка запуска самого SAM2, которая появится вместе с редактором
             run_sam_btn = gr.Button("Запустить отслеживание объекта", variant="stop", visible=False)
 
         with gr.Column():
@@ -42,8 +41,6 @@ with gr.Blocks(title="AI Video Processor") as demo:
             )
             output_video = gr.Video(label="Result")
 
-
-    # ШАГ 1: Если выбрано разделение на слои -> достаем первый кадр и показываем редактор
     def prepare_layer_separation(video_path):
         if not video_path:
             raise gr.Error("Сначала загрузите видео!")
@@ -54,7 +51,6 @@ with gr.Blocks(title="AI Video Processor") as demo:
 
         if ret:
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            # Возвращаем структуру для ImageEditor, делаем его и кнопку запуска видимыми
             return (
                 gr.update(value={"background": frame_rgb, "layers": [], "composite": frame_rgb}, visible=True),
                 gr.update(visible=True)
@@ -62,46 +58,33 @@ with gr.Blocks(title="AI Video Processor") as demo:
         else:
             raise gr.Error("Не удалось прочитать первый кадр видео.")
 
-
     split_btn.click(
         fn=prepare_layer_separation,
         inputs=[input_video],
         outputs=[first_frame_editor, run_sam_btn]
     )
 
-
-    # ШАГ 2: Обработка клика и запуск SAM2 по нажатию на новую кнопку
     def on_run_sam(video_path, editor_data):
         if not editor_data or not editor_data.get("layers"):
             raise gr.Error("Пожалуйста, поставьте хотя бы одну красную точку на объекте!")
 
-        # Получаем слой с рисованием (наша красная разметка)
-        user_layer = editor_data["layers"][0]  # RGBA
-
-        # Ищем пиксели, где альфа-канал > 0
+        user_layer = editor_data["layers"][0]
         y_indices, x_indices = np.where(user_layer[:, :, 3] > 0)
 
         if len(x_indices) == 0:
             raise gr.Error("Точки не обнаружены. Кликните по кадру еще раз.")
 
-        # Собираем ВСЕ отмеченные координаты в список пар [x, y]
         all_points = [[int(x), int(y)] for x, y in zip(x_indices, y_indices)]
-
-        # Делаем прореживание (stride), берем каждую 10-ю точку,
-        # чтобы разгрузить SAM2, но сохранить всю форму выделения
-        sampled_points = all_points[::10]
-        if not sampled_points:  # Если точек было очень мало, берем хотя бы самую первую
-            sampled_points = [all_points[0]]
+        sampled_points = all_points[::10] or [all_points[0]]
 
         print(f"[GRADIO] Передаем в SAM2 массив из {len(sampled_points)} точек.")
 
-        # Запускаем обработчик, передавая массив точек вместо одной
-        paths = separation_layers(video_path, clicked_point=sampled_points)
+        # Читаемый и изолированный вызов декомпозированного класса
+        paths = layer_processor.process(video_path, clicked_points=sampled_points)
 
         if not paths:
             return gr.update(choices=[], visible=False), None
         return gr.update(choices=paths, value=paths[0], visible=True), paths[0]
-
 
     run_sam_btn.click(
         fn=on_run_sam,
@@ -109,7 +92,6 @@ with gr.Blocks(title="AI Video Processor") as demo:
         outputs=[mask_dropdown, output_video]
     )
 
-    # Карта глубин (работает по старой схеме напрямую без кадров)
     depth_btn.click(
         fn=depth_map,
         inputs=[input_video],
