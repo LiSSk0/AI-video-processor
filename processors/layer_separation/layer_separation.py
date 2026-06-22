@@ -89,8 +89,11 @@ def separation_layers(video_path: str) -> list[str]:
                 frame_name = f"{i:05d}.jpg"
                 cv2.imwrite(os.path.join(temp_chunk_dir, frame_name), frame, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
 
-            # Передаем путь к чанку и найденные точки объектов в трекер
+            # Передаем путь к чанку и найденные (или обновленные с прошлого чанка) точки объектов в трекер
             video_segments, inference_state = segmenter.process_video_tracking(temp_chunk_dir, object_points)
+
+            # Переменная для сохранения масок самого последнего кадра в текущем чанке
+            last_frame_masks = {}
 
             for out_frame_idx, out_obj_ids, out_mask_logits in video_segments:
                 num_masks = len(out_obj_ids)
@@ -114,12 +117,45 @@ def separation_layers(video_path: str) -> list[str]:
                         mask_data = (mask_logits > 0.0).astype(np.uint8) * 255
                         mask_frame = cv2.merge([mask_data, mask_data, mask_data])
 
+                        # Сохраняем логику маски для вычисления точек на последнем кадре чанка
+                        if out_frame_idx == current_chunk_len - 1:
+                            last_frame_masks[out_obj_ids[i]] = mask_logits > 0.0
+
                     video_writers[i].write(mask_frame)
 
                 global_frame_num = chunk_start_idx + out_frame_idx
                 percent = (global_frame_num / total_frames) * 100
                 if out_frame_idx % 10 == 0:
                     print(f"[Прогресс] Кадр {global_frame_num}/{total_frames} ({percent:.1f}%)")
+
+            # === ОБНОВЛЕНИЕ ТОЧЕК ДЛЯ СЛЕДУЮЩЕГО ЧАНКА ===
+            # Вычисляем центроиды масок на последнем кадре этого чанка, чтобы передать их дальше
+            next_object_points = []
+            for obj in object_points:
+                obj_id = obj["obj_id"]
+                # Если объект успешно оттрекался на последнем кадре текущего чанка
+                if obj_id in last_frame_masks:
+                    mask = last_frame_masks[obj_id]
+                    y_indices, x_indices = np.where(mask)
+
+                    if len(x_indices) > 0:
+                        center_x = int(np.mean(x_indices))
+                        center_y = int(np.mean(y_indices))
+
+                        # Защита от выхода за пределы геометрии маски (берем первый попавшийся пиксель, если центр пустой)
+                        if not mask[center_y, center_x]:
+                            center_x = int(x_indices[0])
+                            center_y = int(y_indices[0])
+
+                        next_object_points.append({"obj_id": obj_id, "point": [center_x, center_y]})
+                    else:
+                        # Если маска исчезла в этом кадре, сохраняем старую точку как запасную
+                        next_object_points.append(obj)
+                else:
+                    next_object_points.append(obj)
+
+            # Перезаписываем точки новыми координатами для следующей итерации цикла
+            object_points = next_object_points
 
             segmenter.predictor.reset_state(inference_state)
             del inference_state
@@ -136,4 +172,4 @@ def separation_layers(video_path: str) -> list[str]:
 
     total_duration = time.time() - start_time
     print(f"Обработка завершена! Затрачено времени: {total_duration:.1f} сек.")
-    return output_paths
+
