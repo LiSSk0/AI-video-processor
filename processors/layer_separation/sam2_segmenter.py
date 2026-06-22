@@ -118,16 +118,25 @@ class SAM2Segmenter:
         self.predictor.reset_state(inference_state)
 
         if not object_points:
-            object_points = [{"obj_id": 1, "point": [300, 300]}]
+            object_points = [{"obj_id": 1, "point": [[300, 300]]}]
 
-        # Добавляем ВСЕ найденные объекты на 0-й кадр
+        # Добавляем объекты на 0-й кадр
         for obj in object_points:
+            pts = obj["point"]
+
+            # Если пришла одна точка [x, y], оборачиваем её в список [[x, y]]
+            if isinstance(pts, list) and len(pts) > 0 and not isinstance(pts[0], list):
+                pts = [pts]
+
+            # Создаем массив лейблов «1» (foreground) точно такой же длины, как и массив точек
+            labels = [1] * len(pts)
+
             self.predictor.add_new_points_or_box(
                 inference_state=inference_state,
                 frame_idx=0,
                 obj_id=obj["obj_id"],
-                points=[obj["point"]],
-                labels=[1]
+                points=pts,
+                labels=labels
             )
 
         video_segments = self.predictor.propagate_in_video(inference_state)
