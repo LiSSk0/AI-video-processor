@@ -3,9 +3,10 @@ import os
 import numpy as np
 import cv2
 import gc
+import sam2
 
-from sam_facebook_repo.sam2.build_sam import build_sam2_video_predictor, build_sam2
-from sam_facebook_repo.sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
+from sam2.build_sam import build_sam2_video_predictor, build_sam2
+from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 
 from hydra.core.global_hydra import GlobalHydra
 from hydra import initialize_config_dir
@@ -19,9 +20,8 @@ class SAM2Segmenter:
         self.model_cfg = "sam2.1/sam2.1_hiera_t.yaml"
         self.checkpoint_path = checkpoint_path
 
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.abspath(os.path.join(current_dir, "..", ".."))
-        config_dir = os.path.join(project_root, "sam_facebook_repo", "sam2", "configs")
+        sam2_dir = os.path.dirname(os.path.abspath(sam2.__file__))
+        config_dir = os.path.join(sam2_dir, "configs")
 
         if GlobalHydra.instance().is_initialized():
             GlobalHydra.instance().clear()
