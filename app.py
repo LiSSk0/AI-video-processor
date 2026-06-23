@@ -3,6 +3,26 @@ import cv2
 import numpy as np
 from processors.layer_separation.layer_separation import LayerSeparationProcessor
 from processors.depth_map.depth_map import depth_map  # Временно старая, пока коллега не обновит
+from argparse import ArgumentParser
+
+
+def parse_args():
+    parser = ArgumentParser()
+
+    parser.add_argument(
+        "--ip",
+        type=str,
+        default="0.0.0.0",
+        help="Server ip address"
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=7860,
+        help="Server port"
+    )
+    return parser.parse_args()
+
 
 # Инициализируем процессор слоев один раз при запуске приложения
 layer_processor = LayerSeparationProcessor()
@@ -105,4 +125,5 @@ with gr.Blocks(title="AI Video Processor") as demo:
     )
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+    args = parse_args()
+    demo.launch(server_name=args.ip, server_port=args.port)
