@@ -8,7 +8,20 @@ from argparse import ArgumentParser
 
 def parse_args():
     parser = ArgumentParser()
-    # "0.0.0.0", 7860
+
+    parser.add_argument(
+        "--ip",
+        type=str,
+        default="0.0.0.0",
+        help="Server ip address"
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=7860,
+        help="Server port"
+    )
+    return parser.parse_args()
 
 
 # Инициализируем процессор слоев один раз при запуске приложения
