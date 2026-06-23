@@ -1,0 +1,5 @@
+.idea/
+__pycache__/
+*.pyc
+processors/layer_separation/outputs/
+venv/
