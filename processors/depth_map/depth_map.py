@@ -31,47 +31,45 @@ def depth_map(video_path: str) -> (gr.update, str):
     if depth_pipeline is None:
         raise gr.Error("Модель оценки глубины не инициализирована. Проверьте консоль.")
 
-    # Открываем исходный видеофайл
     cap = cv2.VideoCapture(video_path)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
 
-    # Создаем папку для результатов, если её нет
     output_dir = "output_results"
     os.makedirs(output_dir, exist_ok=True)
     output_video_path = os.path.join(output_dir, "output_depth_anything_v2.mp4")
 
-    # Настройка кодека для сохранения видео (.mp4)
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
+    fourcc = cv2.VideoWriter_fourcc(*'avc1')  # кодек H.264 (AVC). другие: [mp4v, XVID]
+    # out = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
+    out = cv2.VideoWriter(
+        output_video_path,
+        cv2.CAP_MSMF,  # Вот этот бэкенд отключает FFMPEG и ошибку с dll!
+        fourcc,
+        fps,
+        (width, height)
+    )
 
     print(f"[Depth Anything V2] Началась обработка видео: {video_path}")
 
     while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
+        is_successfully_read, frame = cap.read()
+        if not is_successfully_read:
             break
 
-        # Конвертируем BGR (OpenCV) в RGB (для PIL и Hugging Face Transformers)
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # BGR в RGB
         pil_img = Image.fromarray(frame_rgb)
 
-        # Инференс модели
-        result = depth_pipeline(pil_img)
+        result = depth_pipeline(pil_img)  # прмименяем модель к кадру
         depth_np = np.array(result["depth"])
 
-        # Возвращаем карту глубин к исходному разрешению видео
-        depth_resized = cv2.resize(depth_np, (width, height))
+        depth_resized = cv2.resize(depth_np, (width, height))  # растягиваем кадр обратно
 
-        # Применяем цветовую палитру Inferno (эффектный тепловой градиент)
-        # Если нужна строго ч/б карта, замените на: color_depth = cv2.cvtColor(depth_resized, cv2.COLOR_GRAY2BGR)
-        color_depth = cv2.applyColorMap(depth_resized, cv2.COLORMAP_INFERNO)
+        color_depth = cv2.applyColorMap(depth_resized, cv2.COLORMAP_INFERNO)  # тепловой градиент
+        # color_depth = cv2.cvtColor(depth_resized, cv2.COLOR_GRAY2BGR)  # чб карта
 
-        # Записываем обработанный кадр
         out.write(color_depth)
 
-    # Закрываем потоки
     cap.release()
     out.release()
     print(f"[Depth Anything V2] Обработка завершена. Файл сохранен: {output_video_path}")
