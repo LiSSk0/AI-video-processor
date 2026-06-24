@@ -11,7 +11,6 @@ if not torch.cuda.is_available():
     print("CUDA is not available.")
     exit()
 
-# Инициализируем пайплайн глобально при импорте модуля
 try:
     depth_pipeline = pipeline(
         task="depth-estimation",
@@ -44,7 +43,7 @@ def depth_map(video_path: str) -> (gr.update, str):
     # out = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
     out = cv2.VideoWriter(
         output_video_path,
-        cv2.CAP_MSMF,  # Вот этот бэкенд отключает FFMPEG и ошибку с dll!
+        # cv2.CAP_MSMF,
         fourcc,
         fps,
         (width, height)
@@ -74,7 +73,4 @@ def depth_map(video_path: str) -> (gr.update, str):
     out.release()
     print(f"[Depth Anything V2] Обработка завершена. Файл сохранен: {output_video_path}")
 
-    # Возвращаем результаты строго под outputs=[mask_dropdown, output_video] в app.py:
-    # 1. Скрываем дропдаун выбора слоев маски (gr.update(visible=False))
-    # 2. Передаем путь к новому видео в плеер результатов
-    return gr.update(visible=False), output_video_path
+    return gr.update(visible=False), output_video_path  # outputs=[mask_dropdown, output_video]
