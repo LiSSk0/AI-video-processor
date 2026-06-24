@@ -14,14 +14,12 @@ class LayerSeparationProcessor:
         self.chunk_size = 70
 
     def process(self, video_path: str, clicked_points: list) -> list[str]:
-        """Главный управляющий пайплайн обработки видео."""
         start_time = time.time()
 
         cap, meta = self._extract_video_metadata(video_path)
         temp_chunk_dir = os.path.join(OUTPUT_DIR, f"temp_chunk_{meta['name']}")
         os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-        # Стартовая точка, переданная из Gradio
         object_points = [{"obj_id": 1, "point": clicked_points}]
         video_writers = []
         output_paths = []
@@ -34,24 +32,19 @@ class LayerSeparationProcessor:
                 current_chunk_len = chunk_end_idx - chunk_start_idx
                 print(f"\n--- Обработка чанка кадров: {chunk_start_idx} - {chunk_end_idx} ---")
 
-                # 1. Извлекаем кадры чанка во временную папку
                 chunk_frames = self._prepare_chunk_frames(cap, temp_chunk_dir, current_chunk_len)
 
-                # 2. Запускаем трекинг модели SAM2
                 video_segments, inference_state = self.segmenter.process_video_tracking(
                     temp_chunk_dir,
                     object_points=object_points
                 )
 
-                # 3. Записываем маскированные слои в видеофайлы
                 last_frame_masks = self._write_layer_frames(
                     video_segments, chunk_frames, current_chunk_len, meta, video_writers, output_paths
                 )
 
-                # 4. Вычисляем центроиды для следующего чанка
                 object_points = self._calculate_next_centroids(last_frame_masks, object_points)
 
-                # Очистка состояния чанка
                 self.segmenter.predictor.reset_state(inference_state)
                 del inference_state
                 del video_segments
@@ -70,7 +63,6 @@ class LayerSeparationProcessor:
         return output_paths
 
     def _extract_video_metadata(self, video_path: str) -> tuple[cv2.VideoCapture, dict]:
-        """Отвечает за открытие видео и извлечение метаданных."""
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             raise FileNotFoundError(f"Не удалось открыть видео по пути: {video_path}")
@@ -96,7 +88,6 @@ class LayerSeparationProcessor:
         return cap, meta
 
     def _prepare_chunk_frames(self, cap: cv2.VideoCapture, temp_dir: str, chunk_len: int) -> list:
-        """Нарезает текущий чанк на изображения на диск для SAM2."""
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
         os.makedirs(temp_dir, exist_ok=True)
@@ -111,14 +102,13 @@ class LayerSeparationProcessor:
             cv2.imwrite(os.path.join(temp_dir, frame_name), frame, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
         return chunk_frames
 
+
     def _write_layer_frames(self, video_segments, chunk_frames, chunk_len, meta, video_writers, output_paths) -> dict:
-        """Применяет маски SAM2 к кадрам и пишет их в VideoWriter."""
         last_frame_masks = {}
 
         for out_frame_idx, out_obj_ids, out_mask_logits in video_segments:
             num_masks = len(out_obj_ids)
 
-            # Динамически создаем новые файлы разметки, если обнаружились слои
             while len(video_writers) < num_masks:
                 layer_idx = len(video_writers) + 1
                 fourcc = cv2.VideoWriter_fourcc(*'avc1')
@@ -144,7 +134,6 @@ class LayerSeparationProcessor:
         return last_frame_masks
 
     def _calculate_next_centroids(self, last_frame_masks: dict, current_points: list) -> list:
-        """Рассчитывает геометрический центр маски для непрерывного трекинга между чанками."""
         next_object_points = []
         for obj in current_points:
             obj_id = obj["obj_id"]
