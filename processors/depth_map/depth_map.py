@@ -6,75 +6,75 @@ import gradio as gr
 from PIL import Image
 from transformers import pipeline
 from sys import exit
-
-if not torch.cuda.is_available():
-    print("CUDA is not available.")
-    exit()
-
-# Инициализируем пайплайн глобально при импорте модуля
-try:
-    depth_pipeline = pipeline(
-        task="depth-estimation",
-        model="depth-anything/Depth-Anything-V2-Small-hf",
-        device=0  # gpu
-    )
-    print("[Depth Anything V2] Модель успешно загружена.")
-except Exception as e:
-    print(f"[Depth Anything V2] Ошибка при загрузке модели: {e}")
-    depth_pipeline = None
+from enum import IntEnum
 
 
-def depth_map(video_path: str) -> (gr.update, str):
-    if not video_path:
-        raise gr.Error("Видео не загружено.")
+class DeviceType(IntEnum):
+    GPU = 0
+    CPU = -1
 
-    if depth_pipeline is None:
-        raise gr.Error("Модель оценки глубины не инициализирована. Проверьте консоль.")
 
-    cap = cv2.VideoCapture(video_path)
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = cap.get(cv2.CAP_PROP_FPS)
+class DepthMapProcessor:
+    def __init__(self):
+        self.depth_pipeline = None
 
-    output_dir = "output_results"
-    os.makedirs(output_dir, exist_ok=True)
-    output_video_path = os.path.join(output_dir, "output_depth_anything_v2.mp4")
+    def process(self, video_path: str) -> (gr.update, str):
+        if not video_path:
+            raise gr.Error("Wrong video path.")
 
-    fourcc = cv2.VideoWriter_fourcc(*'avc1')  # кодек H.264 (AVC). другие: [mp4v, XVID]
-    # out = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
-    out = cv2.VideoWriter(
-        output_video_path,
-        cv2.CAP_MSMF,  # Вот этот бэкенд отключает FFMPEG и ошибку с dll!
-        fourcc,
-        fps,
-        (width, height)
-    )
+        if self.depth_pipeline is None:
+            if not torch.cuda.is_available():
+                raise gr.Error("CUDA is not available.")
+                # print("CUDA is not available.")
+                # return 0
 
-    print(f"[Depth Anything V2] Началась обработка видео: {video_path}")
+            try:
+                print("[Depth Anything V2] Loading the model...")
+                self.depth_pipeline = pipeline(
+                    task="depth-estimation",
+                    model="depth-anything/Depth-Anything-V2-Small-hf",
+                    device=DeviceType.GPU
+                )
+                print("[Depth Anything V2] The model has been uploaded successfully.")
+            except Exception as e:
+                self.depth_pipeline = None
+                print(f"[Depth Anything V2] Error loading the model: {e}")
+                raise gr.Error(f"[Depth Anything V2] Error loading the model: {e}")
 
-    while cap.isOpened():
-        is_successfully_read, frame = cap.read()
-        if not is_successfully_read:
-            break
+        cap = cv2.VideoCapture(video_path)
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
 
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # BGR в RGB
-        pil_img = Image.fromarray(frame_rgb)
+        output_dir = "output_results"
+        os.makedirs(output_dir, exist_ok=True)
+        output_video_path = os.path.join(output_dir, "output_depth_anything_v2.mp4")
 
-        result = depth_pipeline(pil_img)  # прмименяем модель к кадру
-        depth_np = np.array(result["depth"])
+        fourcc = cv2.VideoWriter_fourcc(*'avc1')  # кодек H.264 (AVC). другие: [mp4v, avc1, XVID]
+        out = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
 
-        depth_resized = cv2.resize(depth_np, (width, height))  # растягиваем кадр обратно
+        print(f"[Depth Anything V2] Video processing has started: {video_path}")
 
-        color_depth = cv2.applyColorMap(depth_resized, cv2.COLORMAP_INFERNO)  # тепловой градиент
-        # color_depth = cv2.cvtColor(depth_resized, cv2.COLOR_GRAY2BGR)  # чб карта
+        while cap.isOpened():
+            is_successfully_read, frame = cap.read()
+            if not is_successfully_read:
+                break
 
-        out.write(color_depth)
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            pil_img = Image.fromarray(frame_rgb)
 
-    cap.release()
-    out.release()
-    print(f"[Depth Anything V2] Обработка завершена. Файл сохранен: {output_video_path}")
+            result = self.depth_pipeline(pil_img)
+            depth_np = np.array(result["depth"])
 
-    # Возвращаем результаты строго под outputs=[mask_dropdown, output_video] в app.py:
-    # 1. Скрываем дропдаун выбора слоев маски (gr.update(visible=False))
-    # 2. Передаем путь к новому видео в плеер результатов
-    return gr.update(visible=False), output_video_path
+            depth_resized = cv2.resize(depth_np, (width, height))
+
+            color_depth = cv2.applyColorMap(depth_resized, cv2.COLORMAP_INFERNO)  # тепловой градиент
+            # color_depth = cv2.cvtColor(depth_resized, cv2.COLOR_GRAY2BGR)  # чб карта
+
+            out.write(color_depth)
+
+        cap.release()
+        out.release()
+        print(f"[Depth Anything V2] Processing is completed. The file is saved: {output_video_path}")
+
+        return gr.update(visible=False), output_video_path
