@@ -28,11 +28,11 @@ SAM_CHUNK_SIZE = _config["models"]["layer_separation"]["chunk_size"]
 
 logging.basicConfig(
     level=logging.INFO,  # [DEBUG, INFO, WARNING, ERROR, CRITICAL]
-    format="%(asctime)s [%(levelname)s] %(message)s",
+    format="%(asctime)s [%(levelname)s] [%(name)s] %(message)s",
     handlers=[
         logging.FileHandler(LOG_FILE, encoding="utf-8"),
-        logging.StreamHandler()  # вывод в консоль
+        logging.StreamHandler()  # также вывод в консоль
     ]
 )
 
-logger = logging.getLogger("AI_Video_Processor")
+logging.getLogger("asyncio").setLevel(logging.CRITICAL)
