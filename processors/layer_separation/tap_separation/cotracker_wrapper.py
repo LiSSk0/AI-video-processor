@@ -4,7 +4,6 @@ from cotracker.predictor import CoTrackerPredictor
 class CoTrackerWrapper:
     def __init__(self, checkpoint_path: str):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        # Инициализируем модель с оффлайн/онлайн поддержкой
         self.model = CoTrackerPredictor(checkpoint=checkpoint_path)
         self.model = self.model.to(self.device)
         self.model.eval()

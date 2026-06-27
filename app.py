@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 from processors.layer_separation.layer_separation import LayerSeparationProcessor
 from processors.layer_separation.tap_separation.tap_processor import TAPSeparationProcessor
-from processors.depth_map.depth_map import depth_map
+from processors.depth_map.depth_map import DepthMapProcessor
 from argparse import ArgumentParser
 
 
@@ -17,6 +17,7 @@ def parse_args():
 # Инициализируем оба процессора
 sam_processor = LayerSeparationProcessor()
 tap_processor = TAPSeparationProcessor()
+depth_processor = DepthMapProcessor()
 
 with gr.Blocks(title="AI Video Processor") as demo:
     gr.Markdown("### AI Video Processor")
@@ -120,7 +121,7 @@ with gr.Blocks(title="AI Video Processor") as demo:
 
 
     def run_depth_and_hide_ui(video_path):
-        mask_out, video_out = depth_map(video_path)
+        mask_out, video_out = depth_processor.process(video_path)
         return (
             mask_out,
             video_out,
