@@ -123,7 +123,6 @@ class LayerSeparationProcessor:
                 mask_logits = out_mask_logits[i][0].cpu().numpy()
                 mask_binary = (mask_logits > 0.0).astype(np.uint8) * 255
 
-                # Сохраняем маску последнего кадра для расчета центроида следующего чанка
                 if out_frame_idx == chunk_len - 1:
                     last_frame_masks[out_obj_ids[i]] = mask_logits > 0.0
 
