@@ -7,6 +7,7 @@ from PIL import Image
 from transformers import pipeline
 from sys import exit
 from enum import IntEnum
+from config.config_settings import OUTPUT_DIR, DEPTH_MODEL_NAME
 
 
 class DeviceType(IntEnum):
@@ -32,7 +33,7 @@ class DepthMapProcessor:
                 print("[Depth Anything V2] Loading the model...")
                 self.depth_pipeline = pipeline(
                     task="depth-estimation",
-                    model="depth-anything/Depth-Anything-V2-Small-hf",
+                    model=DEPTH_MODEL_NAME,
                     device=DeviceType.GPU
                 )
                 print("[Depth Anything V2] The model has been uploaded successfully.")
@@ -46,9 +47,7 @@ class DepthMapProcessor:
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = cap.get(cv2.CAP_PROP_FPS)
 
-        output_dir = "output_results"
-        os.makedirs(output_dir, exist_ok=True)
-        output_video_path = os.path.join(output_dir, "output_depth_anything_v2.mp4")
+        output_video_path = os.path.join(OUTPUT_DIR, "output_depth_anything_v2.mp4")
 
         fourcc = cv2.VideoWriter_fourcc(*'avc1')  # кодек H.264 (AVC). другие: [mp4v, avc1, XVID]
         out = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))

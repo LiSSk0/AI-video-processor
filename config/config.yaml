@@ -1,0 +1,9 @@
+storage:
+  output_dir: "output_results"
+  temp_dir: "output_results/temp"
+
+models:
+  depth:
+    model_name: "depth-anything/Depth-Anything-V2-Small-hf"
+  layer_separation:
+    chunk_size: 70
