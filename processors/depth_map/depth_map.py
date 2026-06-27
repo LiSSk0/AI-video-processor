@@ -2,11 +2,15 @@ import os
 import cv2
 import numpy as np
 import torch
+import logging
 import gradio as gr
 from PIL import Image
 from transformers import pipeline
 from sys import exit
 from enum import IntEnum
+from config.config_settings import OUTPUT_DIR, DEPTH_MODEL_NAME
+
+logger = logging.getLogger("Depth Anything V2")
 
 
 class DeviceType(IntEnum):
@@ -24,36 +28,33 @@ class DepthMapProcessor:
 
         if self.depth_pipeline is None:
             if not torch.cuda.is_available():
+                logger.error("CUDA is not available.")
                 raise gr.Error("CUDA is not available.")
-                # print("CUDA is not available.")
-                # return 0
 
             try:
-                print("[Depth Anything V2] Loading the model...")
+                logger.info("Loading the model...")
                 self.depth_pipeline = pipeline(
                     task="depth-estimation",
-                    model="depth-anything/Depth-Anything-V2-Small-hf",
+                    model=DEPTH_MODEL_NAME,
                     device=DeviceType.GPU
                 )
-                print("[Depth Anything V2] The model has been uploaded successfully.")
+                logger.info("The model has been uploaded successfully.")
             except Exception as e:
                 self.depth_pipeline = None
-                print(f"[Depth Anything V2] Error loading the model: {e}")
-                raise gr.Error(f"[Depth Anything V2] Error loading the model: {e}")
+                logger.error(f"Error loading the model: {e}")
+                raise gr.Error(f"Error loading the model: {e}")
 
         cap = cv2.VideoCapture(video_path)
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = cap.get(cv2.CAP_PROP_FPS)
 
-        output_dir = "output_results"
-        os.makedirs(output_dir, exist_ok=True)
-        output_video_path = os.path.join(output_dir, "output_depth_anything_v2.mp4")
+        output_video_path = os.path.join(OUTPUT_DIR, "output_depth_anything_v2.mp4")
 
         fourcc = cv2.VideoWriter_fourcc(*'avc1')  # кодек H.264 (AVC). другие: [mp4v, avc1, XVID]
         out = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
 
-        print(f"[Depth Anything V2] Video processing has started: {video_path}")
+        logger.info(f"Video processing has started: {video_path}")
 
         while cap.isOpened():
             is_successfully_read, frame = cap.read()
@@ -75,6 +76,6 @@ class DepthMapProcessor:
 
         cap.release()
         out.release()
-        print(f"[Depth Anything V2] Processing is completed. The file is saved: {output_video_path}")
+        logger.info(f"Processing is completed. The file is saved: {output_video_path}")
 
         return gr.update(visible=False), output_video_path
