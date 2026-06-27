@@ -1,6 +1,7 @@
 storage:
   output_dir: "output_results"
   temp_dir: "output_results/temp"
+  log_file: "logs/app.log"
 
 models:
   depth:
