@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 from config.config_settings import OUTPUT_DIR, NANOTRACK_BACKBONE,NANOTRACK_HEAD, SAM2_CHECKPOINT
-from processors.layer_separation.sam2_segmenter import SAM2Segmenter
+from processors.layer_separation.sam2_separation.sam2_segmenter import SAM2Segmenter
 
 
 class NanoTrackSeparationProcessor:
