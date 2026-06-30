@@ -4,14 +4,14 @@ import numpy as np
 import time
 import torch
 from pathlib import Path
-from processors.layer_separation.config import CHECKPOINT_PATH, OUTPUT_DIR
+from config.config_settings import OUTPUT_DIR, SAM2_CHECKPOINT
 from processors.layer_separation.sam2_segmenter import SAM2Segmenter
 
 
 class OSTrackSeparationProcessor:
     def __init__(self):
         # Используем SAM2 для маски на первом кадре, а OSTrack (OpenCV Vit Tracker) для слежения за BBox
-        self.sam2_segmenter = SAM2Segmenter(str(CHECKPOINT_PATH))
+        self.sam2_segmenter = SAM2Segmenter(str(SAM2_CHECKPOINT))
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     def process(self, video_path: str, clicked_points: list) -> list[str]:
