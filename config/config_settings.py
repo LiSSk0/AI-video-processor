@@ -36,3 +36,14 @@ logging.basicConfig(
 )
 
 logging.getLogger("asyncio").setLevel(logging.CRITICAL)
+
+
+BASE_DIR = Path(__file__).parent.parent
+CHECKPOINT_DIR = BASE_DIR / "processors" / "layer_separation" / "checkpoints"
+
+NANOTRACK_BACKBONE = CHECKPOINT_DIR / "nanotrack_backbone_sim.onnx"
+NANOTRACK_HEAD = CHECKPOINT_DIR / "nanotrack_head_sim.onnx"
+
+SAM2_CHECKPOINT = CHECKPOINT_DIR / "sam2.1_hiera_tiny.pt"
+
+COTRACKER_CHECKPOINT = CHECKPOINT_DIR / "scaled_offline.pth"

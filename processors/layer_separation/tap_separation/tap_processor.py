@@ -6,18 +6,15 @@ import torch
 import gc
 from pathlib import Path
 
-from processors.layer_separation.config import CHECKPOINT_PATH, OUTPUT_DIR
+from config.config_settings import OUTPUT_DIR, SAM2_CHECKPOINT, COTRACKER_CHECKPOINT
 from processors.layer_separation.sam2_segmenter import SAM2Segmenter
 from processors.layer_separation.tap_separation.cotracker_wrapper import CoTrackerWrapper
 
 
 class TAPSeparationProcessor:
     def __init__(self):
-        cotracker_ckpt = os.path.join(os.path.dirname(CHECKPOINT_PATH), "scaled_offline.pth")
-
-        self.sam2_segmenter = SAM2Segmenter(str(CHECKPOINT_PATH))
-        self.cotracker = CoTrackerWrapper(cotracker_ckpt)
-
+        self.sam2_segmenter = SAM2Segmenter(str(SAM2_CHECKPOINT))
+        self.cotracker = CoTrackerWrapper(str(COTRACKER_CHECKPOINT))
         self.chunk_size = 60
         self.grid_step = 12
 

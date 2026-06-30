@@ -5,12 +5,12 @@ import time
 import shutil
 from pathlib import Path
 from processors.layer_separation.sam2_segmenter import SAM2Segmenter
-from processors.layer_separation.config import CHECKPOINT_PATH, OUTPUT_DIR
+from config.config_settings import OUTPUT_DIR, SAM2_CHECKPOINT
 
 
 class LayerSeparationProcessor:
     def __init__(self):
-        self.segmenter = SAM2Segmenter(str(CHECKPOINT_PATH))
+        self.segmenter = SAM2Segmenter(str(SAM2_CHECKPOINT))
         self.chunk_size = 70
 
     def process(self, video_path: str, clicked_points: list) -> list[str]:
