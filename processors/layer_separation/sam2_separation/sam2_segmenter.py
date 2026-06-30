@@ -3,6 +3,9 @@ import os
 import gc
 import sam2
 import numpy as np
+
+from config.config_settings import DEVICE, SAM2_MODEL_CFG
+
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 from sam2.build_sam import build_sam2_video_predictor, build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
@@ -17,8 +20,8 @@ class SAM2Segmenter:
     def __init__(self, checkpoint_path: str):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        self.model_cfg = "sam2.1/sam2.1_hiera_t.yaml"
-        self.checkpoint_path = checkpoint_path
+        self.device = DEVICE
+        self.model_cfg = SAM2_MODEL_CFG
 
         sam2_dir = os.path.dirname(os.path.abspath(sam2.__file__))
         config_dir = os.path.join(sam2_dir, "configs")

@@ -6,20 +6,17 @@ import torch
 import gc
 from pathlib import Path
 
-from processors.layer_separation.config import CHECKPOINT_PATH, OUTPUT_DIR
-from processors.layer_separation.sam2_segmenter import SAM2Segmenter
+from config.config_settings import OUTPUT_DIR, SAM2_CHECKPOINT, COTRACKER_CHECKPOINT, COTRACKER_CHUNK_SIZE, COTRACKER_GRID_STEP
+from processors.layer_separation.sam2_separation.sam2_segmenter import SAM2Segmenter
 from processors.layer_separation.tap_separation.cotracker_wrapper import CoTrackerWrapper
 
 
 class TAPSeparationProcessor:
     def __init__(self):
-        cotracker_ckpt = os.path.join(os.path.dirname(CHECKPOINT_PATH), "scaled_offline.pth")
-
-        self.sam2_segmenter = SAM2Segmenter(str(CHECKPOINT_PATH))
-        self.cotracker = CoTrackerWrapper(cotracker_ckpt)
-
-        self.chunk_size = 60
-        self.grid_step = 12
+        self.sam2_segmenter = SAM2Segmenter(str(SAM2_CHECKPOINT))
+        self.cotracker = CoTrackerWrapper(str(COTRACKER_CHECKPOINT))
+        self.chunk_size = COTRACKER_CHUNK_SIZE
+        self.grid_step = COTRACKER_GRID_STEP
 
     def process(self, video_path: str, clicked_points: list) -> list[str]:
         start_time = time.time()
