@@ -3,6 +3,7 @@ from pathlib import Path
 import logging
 
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
+BASE_DIR = Path(__file__).parent.parent
 
 
 def load_config():
@@ -36,3 +37,19 @@ logging.basicConfig(
 )
 
 logging.getLogger("asyncio").setLevel(logging.CRITICAL)
+
+
+_ls_config = _config["models"]["layer_separation"]
+DEVICE = _ls_config.get("device", "cuda")
+APP_SAMPLING_STEP = _ls_config.get("sampling_step", 10)
+
+SAM2_CHECKPOINT = BASE_DIR / _ls_config["sam2"]["checkpoint"]
+SAM2_MODEL_CFG = _ls_config["sam2"]["model_cfg"]
+SAM2_CHUNK_SIZE = _ls_config["sam2"]["chunk_size"]
+
+COTRACKER_CHECKPOINT = BASE_DIR / _ls_config["cotracker"]["checkpoint"]
+COTRACKER_CHUNK_SIZE = _ls_config["cotracker"]["chunk_size"]
+COTRACKER_GRID_STEP = _ls_config["cotracker"]["grid_step"]
+
+NANOTRACK_BACKBONE = BASE_DIR / _ls_config["nanotrack"]["backbone"]
+NANOTRACK_HEAD = BASE_DIR / _ls_config["nanotrack"]["head"]
