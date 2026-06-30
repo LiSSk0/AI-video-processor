@@ -4,7 +4,9 @@ import numpy as np
 from processors.layer_separation.layer_separation import LayerSeparationProcessor
 from processors.layer_separation.tap_separation.tap_processor import TAPSeparationProcessor
 from processors.depth_map.depth_map import DepthMapProcessor
+from processors.layer_separation.bbox_methods.ostrack_processor import OSTrackSeparationProcessor
 from argparse import ArgumentParser
+
 
 
 def parse_args():
@@ -14,10 +16,10 @@ def parse_args():
     return parser.parse_args()
 
 
-# Инициализируем оба процессора
 sam_processor = LayerSeparationProcessor()
 tap_processor = TAPSeparationProcessor()
 depth_processor = DepthMapProcessor()
+ostrack_processor = OSTrackSeparationProcessor()
 
 with gr.Blocks(title="AI Video Processor") as demo:
     gr.Markdown("### AI Video Processor")
@@ -28,7 +30,7 @@ with gr.Blocks(title="AI Video Processor") as demo:
             input_video = gr.Video(label="Move video here")
 
             tracking_method = gr.Radio(
-                choices=["SAM2 Video", "TAP (CoTracker + Convex Hull)"],
+                choices=["SAM2 Video", "TAP (CoTracker + Convex Hull)", "OSTrack (BBox Tracking)"],
                 value="SAM2 Video",
                 label="Выбор алгоритма трекинга",
                 visible=False
@@ -104,8 +106,12 @@ with gr.Blocks(title="AI Video Processor") as demo:
 
         if method == "SAM2 Video":
             paths = sam_processor.process(video_path, clicked_points=sampled_points)
-        else:
+        elif method == "TAP (CoTracker + Convex Hull)":
             paths = tap_processor.process(video_path, clicked_points=sampled_points)
+        elif method == "OSTrack (BBox Tracking)":
+            paths = ostrack_processor.process(video_path, clicked_points=sampled_points)
+        else:
+            paths = []
 
         if not paths:
             return gr.update(choices=[], visible=False), None
