@@ -1,0 +1,136 @@
+import os
+import cv2
+import numpy as np
+import time
+import torch
+import gc
+import logging
+from pathlib import Path
+
+from config.config_settings import OUTPUT_DIR, SAM2_CHECKPOINT, COTRACKER_CHECKPOINT, COTRACKER_CHUNK_SIZE, COTRACKER_GRID_STEP
+from processors.layer_separation.sam2_separation.sam2_segmenter import SAM2Segmenter
+from processors.layer_separation.tap_separation.cotracker_wrapper import CoTrackerWrapper
+
+logger = logging.getLogger("TAPSeparationProcessor")
+
+
+class TAPSeparationProcessor:
+    def __init__(self):
+        self.sam2_segmenter = SAM2Segmenter(str(SAM2_CHECKPOINT))
+        self.cotracker = CoTrackerWrapper(str(COTRACKER_CHECKPOINT))
+        self.chunk_size = COTRACKER_CHUNK_SIZE
+        self.grid_step = COTRACKER_GRID_STEP
+
+    def process(self, video_path: str, clicked_points: list) -> list[str]:
+        start_time = time.time()
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+        cap = cv2.VideoCapture(video_path)
+        fps = cap.get(cv2.CAP_PROP_FPS)
+
+        width_even = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) & ~1
+        height_even = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) & ~1
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+        name = Path(video_path).stem
+        ext = ".mp4"
+
+        out_masked = os.path.join(OUTPUT_DIR, f"{name}_tap_background{ext}")
+        out_object = os.path.join(OUTPUT_DIR, f"{name}_tap_object{ext}")
+
+        fourcc = cv2.VideoWriter_fourcc(*'avc1')
+        writer_bg = cv2.VideoWriter(out_masked, fourcc, fps, (width_even, height_even))
+        writer_obj = cv2.VideoWriter(out_object, fourcc, fps, (width_even, height_even))
+
+        ret, first_frame = cap.read()
+        if not ret:
+            logger.error("Failed to read the first frame.")
+            return []
+
+        rgb_frame = cv2.cvtColor(first_frame, cv2.COLOR_BGR2RGB)
+        logger.info("Extracting initial object mask using SAM2.")
+
+        initial_mask = self.sam2_segmenter.get_image_mask(rgb_frame, clicked_points)
+
+        y_idx, x_idx = np.where(initial_mask)
+        if len(x_idx) == 0:
+            logger.error("SAM2 failed to detect the object.")
+            return []
+
+        pts_x = x_idx[::self.grid_step]
+        pts_y = y_idx[::self.grid_step]
+        current_points = np.column_stack((pts_x, pts_y)).astype(np.float32)
+        logger.info(f"Points found for tracking: {len(current_points)}")
+
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+        for chunk_start in range(0, total_frames, self.chunk_size):
+            chunk_frames_bgr = []
+            chunk_frames_rgb_tensor = []
+
+            for _ in range(self.chunk_size):
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                chunk_frames_bgr.append(frame)
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                chunk_frames_rgb_tensor.append(torch.from_numpy(rgb).permute(2, 0, 1).float())
+
+            if not chunk_frames_bgr:
+                break
+
+            T = len(chunk_frames_bgr)
+            logger.info(f"Processing chunk: {chunk_start} - {chunk_start + T}")
+
+            # video tensor [1, T, 3, H, W]
+            video_tensor = torch.stack(chunk_frames_rgb_tensor).unsqueeze(0).to(self.cotracker.device)
+
+            # queries: [1, N, 3] -> (t=0, x, y)
+            N = len(current_points)
+            queries = np.zeros((N, 3), dtype=np.float32)
+            queries[:, 1:] = current_points
+            queries_tensor = torch.from_numpy(queries).unsqueeze(0).to(self.cotracker.device)
+
+            pred_tracks, pred_vis = self.cotracker.track_chunk(video_tensor, queries_tensor)
+
+            # pred_tracks has shape (1, T, N, 2)
+            tracks_np = pred_tracks[0].cpu().numpy()  # (T, N, 2)
+            vis_np = pred_vis[0].cpu().numpy()  # (T, N)
+
+            for t in range(T):
+                frame = chunk_frames_bgr[t]
+
+                if frame.shape[1] != width_even or frame.shape[0] != height_even:
+                    frame = cv2.resize(frame, (width_even, height_even))
+
+                valid_mask = vis_np[t] > 0.5
+                valid_points = tracks_np[t][valid_mask]
+
+                mask_hull = np.zeros((height_even, width_even), dtype=np.uint8)
+                if len(valid_points) >= 3:
+                    pts_int = valid_points.astype(np.int32)
+                    hull = cv2.convexHull(pts_int)
+                    cv2.fillConvexPoly(mask_hull, hull, 255)
+
+                obj_layer = cv2.bitwise_and(frame, frame, mask=mask_hull)
+                bg_layer = cv2.bitwise_and(frame, frame, mask=cv2.bitwise_not(mask_hull))
+
+                writer_obj.write(obj_layer)
+                writer_bg.write(bg_layer)
+
+            last_valid_mask = vis_np[-1] > 0.5
+            current_points = tracks_np[-1][last_valid_mask]
+
+            del video_tensor
+            del queries_tensor
+            del pred_tracks
+            torch.cuda.empty_cache()
+            gc.collect()
+
+        cap.release()
+        writer_bg.release()
+        writer_obj.release()
+
+        total_duration = time.time() - start_time
+        logger.info(f"TAP processing completed in {total_duration:.2f} seconds.")
+        return [out_object]

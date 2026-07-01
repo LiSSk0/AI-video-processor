@@ -1,2 +1,4 @@
 gradio==5.38.0
 requests==2.34.2
+pyyaml==6.0.3
+git+https://github.com/facebookresearch/sam2.git

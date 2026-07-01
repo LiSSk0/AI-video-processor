@@ -1,0 +1,26 @@
+storage:
+  output_dir: "output_results"
+  temp_dir: "output_results/temp"
+  log_file: "logs/app.log"
+
+models:
+  depth:
+    model_name: "depth-anything/Depth-Anything-V2-Small-hf"
+
+  layer_separation:
+    device: "cuda"      # or cpu 
+    sampling_step: 10
+
+    sam2:
+      checkpoint: "processors/layer_separation/checkpoints/sam2.1_hiera_tiny.pt"
+      model_cfg: "sam2.1/sam2.1_hiera_t.yaml"
+      chunk_size: 70
+
+    cotracker:
+      checkpoint: "processors/layer_separation/checkpoints/scaled_offline.pth"
+      chunk_size: 60
+      grid_step: 12
+
+    nanotrack:
+      backbone: "processors/layer_separation/checkpoints/nanotrack_backbone_sim.onnx"
+      head: "processors/layer_separation/checkpoints/nanotrack_head_sim.onnx"
