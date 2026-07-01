@@ -3,9 +3,12 @@ import cv2
 import numpy as np
 import time
 import shutil
+import logging
 from pathlib import Path
 from processors.layer_separation.sam2_separation.sam2_segmenter import SAM2Segmenter
 from config.config_settings import OUTPUT_DIR, SAM2_CHECKPOINT, SAM2_CHUNK_SIZE
+
+logger = logging.getLogger("LayerSeparationProcessor")
 
 
 class LayerSeparationProcessor:
@@ -30,7 +33,7 @@ class LayerSeparationProcessor:
             for chunk_start_idx in range(0, meta["total_frames"], self.chunk_size):
                 chunk_end_idx = min(chunk_start_idx + self.chunk_size, meta["total_frames"])
                 current_chunk_len = chunk_end_idx - chunk_start_idx
-                print(f"\n--- Обработка чанка кадров: {chunk_start_idx} - {chunk_end_idx} ---")
+                logger.info(f"Processing frame chunk: {chunk_start_idx} - {chunk_end_idx}")
 
                 chunk_frames = self._prepare_chunk_frames(cap, temp_chunk_dir, current_chunk_len)
 
@@ -56,16 +59,17 @@ class LayerSeparationProcessor:
 
             if os.path.exists(temp_chunk_dir):
                 shutil.rmtree(temp_chunk_dir)
-                print(f"\n[INFO] Временная папка чанков удалена.")
+                logger.info("Temporary chunk directory removed.")
 
         total_duration = time.time() - start_time
-        print(f"[INFO] Обработка завершена за {total_duration:.2f} сек.")
+        logger.info(f"Layer separation completed in {total_duration:.2f} seconds.")
         return output_paths
 
     def _extract_video_metadata(self, video_path: str) -> tuple[cv2.VideoCapture, dict]:
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
-            raise FileNotFoundError(f"Не удалось открыть видео по пути: {video_path}")
+            logger.error(f"Failed to open video at path: {video_path}")
+            raise FileNotFoundError(f"Failed to open video at path: {video_path}")
 
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         if total_frames <= 0:
@@ -101,7 +105,6 @@ class LayerSeparationProcessor:
             frame_name = f"{i:05d}.jpg"
             cv2.imwrite(os.path.join(temp_dir, frame_name), frame, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
         return chunk_frames
-
 
     def _write_layer_frames(self, video_segments, chunk_frames, chunk_len, meta, video_writers, output_paths) -> dict:
         last_frame_masks = {}
