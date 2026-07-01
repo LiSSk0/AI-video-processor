@@ -2,15 +2,17 @@ import os
 import cv2
 import numpy as np
 import time
+import logging
 from pathlib import Path
 
-from config.config_settings import OUTPUT_DIR, NANOTRACK_BACKBONE,NANOTRACK_HEAD, SAM2_CHECKPOINT
+from config.config_settings import OUTPUT_DIR, NANOTRACK_BACKBONE, NANOTRACK_HEAD, SAM2_CHECKPOINT
 from processors.layer_separation.sam2_separation.sam2_segmenter import SAM2Segmenter
+
+logger = logging.getLogger("NanoTrackProcessor")
 
 
 class NanoTrackSeparationProcessor:
     def __init__(self):
-        # SAM2 используется только для получения маски первого кадра
         self.sam2_segmenter = SAM2Segmenter(str(SAM2_CHECKPOINT))
 
         self.backbone_path = str(NANOTRACK_BACKBONE)
@@ -24,7 +26,7 @@ class NanoTrackSeparationProcessor:
         cap = cv2.VideoCapture(video_path)
 
         if not cap.isOpened():
-            print("[ERROR] Не удалось открыть видео.")
+            logger.error("Failed to open video.")
             return []
 
         fps = cap.get(cv2.CAP_PROP_FPS)
@@ -46,35 +48,23 @@ class NanoTrackSeparationProcessor:
 
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
 
-        writer_bg = cv2.VideoWriter(
-            out_background,
-            fourcc,
-            fps,
-            (width, height)
-        )
+        writer_bg = cv2.VideoWriter(out_background, fourcc, fps, (width, height))
 
-        writer_obj = cv2.VideoWriter(
-            out_object,
-            fourcc,
-            fps,
-            (width, height)
-        )
+        writer_obj = cv2.VideoWriter(out_object, fourcc, fps, (width, height))
 
         if not writer_bg.isOpened():
-            raise RuntimeError("Не удалось открыть VideoWriter для background.")
+            logger.error("Failed to open VideoWriter for background.")
+            raise RuntimeError("Failed to open VideoWriter for background.")
 
         if not writer_obj.isOpened():
-            raise RuntimeError("Не удалось открыть VideoWriter для object.")
+            logger.error("Failed to open VideoWriter for object.")
+            raise RuntimeError("Failed to open VideoWriter for object.")
 
         ret, first_frame = cap.read()
 
         if not ret:
-            print("[ERROR] Не удалось прочитать первый кадр.")
+            logger.error("Failed to read the first frame.")
             return []
-
-        # --------------------------------------------------------
-        # SAM2 -> маска первого кадра
-        # --------------------------------------------------------
 
         rgb = cv2.cvtColor(first_frame, cv2.COLOR_BGR2RGB)
 
@@ -86,7 +76,7 @@ class NanoTrackSeparationProcessor:
         y_idx, x_idx = np.where(initial_mask)
 
         if len(x_idx) == 0:
-            print("[ERROR] SAM2 не смог выделить объект.")
+            logger.error("SAM2 failed to isolate the object.")
             return []
 
         x1 = int(np.min(x_idx))
@@ -94,28 +84,20 @@ class NanoTrackSeparationProcessor:
         x2 = int(np.max(x_idx))
         y2 = int(np.max(y_idx))
 
-        bbox = (
-            x1,
-            y1,
-            x2 - x1,
-            y2 - y1
-        )
-
-        # --------------------------------------------------------
-        # NanoTrack
-        # --------------------------------------------------------
+        bbox = (x1, y1, x2 - x1, y2 - y1)
 
         if not os.path.exists(self.backbone_path):
+            logger.error(f"Backbone file not found: {self.backbone_path}")
             raise FileNotFoundError(self.backbone_path)
 
         if not os.path.exists(self.head_path):
+            logger.error(f"Head file not found: {self.head_path}")
             raise FileNotFoundError(self.head_path)
 
-        print("[NanoTrack] Backbone:", self.backbone_path)
-        print("[NanoTrack] Head:", self.head_path)
+        logger.info(f"Backbone: {self.backbone_path}")
+        logger.info(f"Head: {self.head_path}")
 
         try:
-
             params = cv2.TrackerNano_Params()
 
             params.backbone = self.backbone_path
@@ -125,80 +107,38 @@ class NanoTrackSeparationProcessor:
 
             tracker.init(first_frame, bbox)
 
-            print("[NanoTrack] Tracker успешно инициализирован.")
+            logger.info("Tracker successfully initialized.")
 
         except (cv2.error, AttributeError) as e:
 
-            print("[NanoTrack] Ошибка создания NanoTrack:")
-            print(e)
-
-            print("[NanoTrack] Используется TrackerMIL.")
+            logger.error(f"Error creating NanoTrack: {e}")
+            logger.warning("Using TrackerMIL instead.")
 
             tracker = cv2.TrackerMIL_create()
             tracker.init(first_frame, bbox)
 
-        # --------------------------------------------------------
-        # Первый кадр
-        # --------------------------------------------------------
-
-        self._write_layers(
-            first_frame,
-            bbox,
-            writer_obj,
-            writer_bg,
-            width,
-            height
-        )
-
-        # --------------------------------------------------------
-        # Обработка видео
-        # --------------------------------------------------------
+        self._write_layers(first_frame, bbox, writer_obj, writer_bg, width, height)
 
         while True:
-
             ret, frame = cap.read()
-
             if not ret:
                 break
-
             success, box = tracker.update(frame)
-
             if success:
                 bbox = tuple(map(int, box))
 
-            self._write_layers(
-                frame,
-                bbox,
-                writer_obj,
-                writer_bg,
-                width,
-                height
-            )
+            self._write_layers(frame, bbox, writer_obj, writer_bg, width, height)
 
         cap.release()
 
         writer_bg.release()
         writer_obj.release()
 
-        print(
-            f"[INFO] NanoTrack завершил обработку за "
-            f"{time.time() - start_time:.2f} сек."
-        )
+        logger.info(f"NanoTrack completed processing in {time.time() - start_time:.2f} seconds.")
 
-        return [
-            out_object,
-            out_background
-        ]
+        return [out_object, out_background]
 
-    def _write_layers(
-        self,
-        frame,
-        bbox,
-        writer_obj,
-        writer_bg,
-        width,
-        height
-    ):
+    def _write_layers(self, frame, bbox, writer_obj, writer_bg, width, height):
 
         x, y, bw, bh = bbox
 
@@ -211,25 +151,11 @@ class NanoTrackSeparationProcessor:
         mask = np.zeros((height, width), dtype=np.uint8)
 
         if bw > 0 and bh > 0:
-            cv2.rectangle(
-                mask,
-                (x, y),
-                (x + bw, y + bh),
-                255,
-                -1
-            )
+            cv2.rectangle(mask, (x, y), (x + bw, y + bh), 255, -1)
 
-        object_layer = cv2.bitwise_and(
-            frame,
-            frame,
-            mask=mask
-        )
+        object_layer = cv2.bitwise_and(frame,  frame, mask=mask)
 
-        background_layer = cv2.bitwise_and(
-            frame,
-            frame,
-            mask=cv2.bitwise_not(mask)
-        )
+        background_layer = cv2.bitwise_and(frame, frame, mask=cv2.bitwise_not(mask))
 
         writer_obj.write(object_layer)
         writer_bg.write(background_layer)

@@ -24,7 +24,6 @@ LOG_FILE = Path(_config["storage"]["log_file"])
 LOG_FILE.parent.mkdir(exist_ok=True)
 
 DEPTH_MODEL_NAME = _config["models"]["depth"]["model_name"]
-SAM_CHUNK_SIZE = _config["models"]["layer_separation"]["chunk_size"]
 
 
 logging.basicConfig(
