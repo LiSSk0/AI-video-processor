@@ -3,6 +3,7 @@ import os
 import gc
 import sam2
 import numpy as np
+import logging
 
 from config.config_settings import DEVICE, SAM2_MODEL_CFG
 
@@ -10,9 +11,11 @@ from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 from sam2.build_sam import build_sam2_video_predictor, build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 
-
 from hydra.core.global_hydra import GlobalHydra
 from hydra import initialize_config_dir
+
+
+logger = logging.getLogger("SAM2Segmenter")
 
 
 class SAM2Segmenter:
@@ -22,6 +25,7 @@ class SAM2Segmenter:
 
         self.device = DEVICE
         self.model_cfg = SAM2_MODEL_CFG
+        self.checkpoint_path = checkpoint_path
 
         sam2_dir = os.path.dirname(os.path.abspath(sam2.__file__))
         config_dir = os.path.join(sam2_dir, "configs")
@@ -40,7 +44,10 @@ class SAM2Segmenter:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
+        logger.info("SAM2Segmenter successfully initialized.")
+
     def process_video_tracking(self, video_path: str, object_points: list = None):
+        logger.info(f"Initializing video tracking state for path: {video_path}")
         inference_state = self.predictor.init_state(video_path=video_path)
         self.predictor.reset_state(inference_state)
 
@@ -63,19 +70,19 @@ class SAM2Segmenter:
                 labels=labels
             )
 
+        logger.info("Propagating tracking throughout the video.")
         video_segments = self.predictor.propagate_in_video(inference_state)
         return video_segments, inference_state
 
     def get_image_mask(self, image: np.ndarray, point_coords: list) -> np.ndarray:
-        """
-        Получает маску для одного изображения (первого кадра) по кликнутой точке.
-        """
+
         import os
         import sam2
         from hydra.core.global_hydra import GlobalHydra
         from hydra import initialize_config_dir
 
-        # --- Добавляем инициализацию Hydra ---
+        logger.info("Generating single image mask using SAM2.")
+
         sam2_dir = os.path.dirname(os.path.abspath(sam2.__file__))
         config_dir = os.path.join(sam2_dir, "configs")
 
@@ -84,7 +91,6 @@ class SAM2Segmenter:
 
         with initialize_config_dir(config_dir=config_dir, version_base="1.2"):
             sam_model = build_sam2(self.model_cfg, self.checkpoint_path, device=self.device)
-        # -------------------------------------
 
         image_predictor = SAM2ImagePredictor(sam_model)
         image_predictor.set_image(image)
@@ -104,6 +110,5 @@ class SAM2Segmenter:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
+        logger.info("Image mask generation completed successfully.")
         return masks[0] > 0.0
-
-
