@@ -4,11 +4,14 @@ import numpy as np
 import time
 import torch
 import gc
+import logging
 from pathlib import Path
 
 from config.config_settings import OUTPUT_DIR, SAM2_CHECKPOINT, COTRACKER_CHECKPOINT, COTRACKER_CHUNK_SIZE, COTRACKER_GRID_STEP
 from processors.layer_separation.sam2_separation.sam2_segmenter import SAM2Segmenter
 from processors.layer_separation.tap_separation.cotracker_wrapper import CoTrackerWrapper
+
+logger = logging.getLogger("TAPSeparationProcessor")
 
 
 class TAPSeparationProcessor:
@@ -41,22 +44,23 @@ class TAPSeparationProcessor:
 
         ret, first_frame = cap.read()
         if not ret:
+            logger.error("Failed to read the first frame.")
             return []
 
         rgb_frame = cv2.cvtColor(first_frame, cv2.COLOR_BGR2RGB)
-        print("[TAP] Получение начальной маски объекта через SAM2...")
+        logger.info("Extracting initial object mask using SAM2.")
 
         initial_mask = self.sam2_segmenter.get_image_mask(rgb_frame, clicked_points)
 
         y_idx, x_idx = np.where(initial_mask)
         if len(x_idx) == 0:
-            print("[ERROR] SAM2 не нашел объект.")
+            logger.error("SAM2 failed to detect the object.")
             return []
 
         pts_x = x_idx[::self.grid_step]
         pts_y = y_idx[::self.grid_step]
         current_points = np.column_stack((pts_x, pts_y)).astype(np.float32)
-        print(f"[TAP] Найдено точек для отслеживания: {len(current_points)}")
+        logger.info(f"Points found for tracking: {len(current_points)}")
 
         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
@@ -76,12 +80,12 @@ class TAPSeparationProcessor:
                 break
 
             T = len(chunk_frames_bgr)
-            print(f"--- Обработка чанка: {chunk_start} - {chunk_start + T} ---")
+            logger.info(f"Processing chunk: {chunk_start} - {chunk_start + T}")
 
-            # видео тензор [1, T, 3, H, W]
+            # video tensor [1, T, 3, H, W]
             video_tensor = torch.stack(chunk_frames_rgb_tensor).unsqueeze(0).to(self.cotracker.device)
 
-            # запросы: [1, N, 3] -> (t=0, x, y)
+            # queries: [1, N, 3] -> (t=0, x, y)
             N = len(current_points)
             queries = np.zeros((N, 3), dtype=np.float32)
             queries[:, 1:] = current_points
@@ -89,7 +93,7 @@ class TAPSeparationProcessor:
 
             pred_tracks, pred_vis = self.cotracker.track_chunk(video_tensor, queries_tensor)
 
-            # pred_tracks имеет форму (1, T, N, 2)
+            # pred_tracks has shape (1, T, N, 2)
             tracks_np = pred_tracks[0].cpu().numpy()  # (T, N, 2)
             vis_np = pred_vis[0].cpu().numpy()  # (T, N)
 
@@ -128,5 +132,5 @@ class TAPSeparationProcessor:
         writer_obj.release()
 
         total_duration = time.time() - start_time
-        print(f"[INFO] Обработка TAP завершена за {total_duration:.2f} сек.")
+        logger.info(f"TAP processing completed in {total_duration:.2f} seconds.")
         return [out_object]
