@@ -6,7 +6,7 @@ import shutil
 import logging
 from pathlib import Path
 from processors.layer_separation.sam2_separation.sam2_segmenter import SAM2Segmenter
-from config.config_settings import OUTPUT_DIR, SAM2_CHECKPOINT, SAM2_CHUNK_SIZE
+from config.config_settings import OUTPUT_DIR, TEMP_DIR, SAM2_CHECKPOINT, SAM2_CHUNK_SIZE
 
 logger = logging.getLogger("LayerSeparationProcessor")
 
@@ -20,7 +20,8 @@ class LayerSeparationProcessor:
         start_time = time.time()
 
         cap, meta = self._extract_video_metadata(video_path)
-        temp_chunk_dir = os.path.join(OUTPUT_DIR, f"temp_chunk_{meta['name']}")
+
+        temp_chunk_dir = os.path.join(str(TEMP_DIR), f"temp_chunk_{meta['name']}")
         os.makedirs(OUTPUT_DIR, exist_ok=True)
 
         object_points = [{"obj_id": 1, "point": clicked_points}]
