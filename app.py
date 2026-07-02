@@ -1,8 +1,9 @@
 import gradio as gr
 import cv2
 import numpy as np
-from processors.layer_separation.layer_separation import LayerSeparationProcessor
-from processors.layer_separation.tap_separation.tap_processor import TAPSeparationProcessor
+# from processors.layer_separation.layer_separation import LayerSeparationProcessor
+
+# ИСПРАВИЛ: Импортируем КЛАСС, а не старую функцию
 from processors.depth_map.depth_map import DepthMapProcessor
 from argparse import ArgumentParser
 
@@ -14,9 +15,7 @@ def parse_args():
     return parser.parse_args()
 
 
-# Инициализируем оба процессора
-sam_processor = LayerSeparationProcessor()
-tap_processor = TAPSeparationProcessor()
+# layer_processor = LayerSeparationProcessor()
 depth_processor = DepthMapProcessor()
 
 with gr.Blocks(title="AI Video Processor") as demo:
@@ -27,15 +26,9 @@ with gr.Blocks(title="AI Video Processor") as demo:
             gr.Markdown("#### 1. Upload Video")
             input_video = gr.Video(label="Move video here")
 
-            tracking_method = gr.Radio(
-                choices=["SAM2 Video", "TAP (CoTracker + Convex Hull)"],
-                value="SAM2 Video",
-                label="Выбор алгоритма трекинга",
-                visible=False
-            )
-
             with gr.Row():
-                split_btn = gr.Button("Separation into layers", variant="primary")
+                # ЗАКОММЕНТИРОВАЛ кнопку разделения, оставил только карту глубины
+                # split_btn = gr.Button("Separation into layers", variant="primary")
                 depth_btn = gr.Button("Building a depth map", variant="primary")
 
             first_frame_editor = gr.ImageEditor(
@@ -48,7 +41,7 @@ with gr.Blocks(title="AI Video Processor") as demo:
                 sources=[]
             )
 
-            run_track_btn = gr.Button("Запустить отслеживание объекта", variant="stop", visible=False)
+            run_sam_btn = gr.Button("Запустить отслеживание объекта", variant="stop", visible=False)
 
         with gr.Column():
             gr.Markdown("#### 2. Processing Result")
@@ -59,7 +52,6 @@ with gr.Blocks(title="AI Video Processor") as demo:
                 visible=False
             )
             output_video = gr.Video(label="Result")
-
 
     def prepare_layer_separation(video_path):
         if not video_path:
@@ -73,21 +65,19 @@ with gr.Blocks(title="AI Video Processor") as demo:
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             return (
                 gr.update(value={"background": frame_rgb, "layers": [], "composite": frame_rgb}, visible=True),
-                gr.update(visible=True),
                 gr.update(visible=True)
             )
         else:
             raise gr.Error("Не удалось прочитать первый кадр видео.")
 
+    # ЗАКОММЕНТИРОВАЛ привязку логики SAM к кнопкам
+    # split_btn.click(
+    #     fn=prepare_layer_separation,
+    #     inputs=[input_video],
+    #     outputs=[first_frame_editor, run_sam_btn]
+    # )
 
-    split_btn.click(
-        fn=prepare_layer_separation,
-        inputs=[input_video],
-        outputs=[first_frame_editor, run_track_btn, tracking_method]
-    )
-
-
-    def on_run_tracking(video_path, editor_data, method):
+    def on_run_sam(video_path, editor_data):
         if not editor_data or not editor_data.get("layers"):
             raise gr.Error("Пожалуйста, поставьте хотя бы одну красную точку на объекте!")
 
@@ -100,40 +90,25 @@ with gr.Blocks(title="AI Video Processor") as demo:
         all_points = [[int(x), int(y)] for x, y in zip(x_indices, y_indices)]
         sampled_points = all_points[::10] or [all_points[0]]
 
-        print(f"[GRADIO] Используем алгоритм: {method}")
+        print(f"[GRADIO] Передаем в SAM2 массив из {len(sampled_points)} точек.")
 
-        if method == "SAM2 Video":
-            paths = sam_processor.process(video_path, clicked_points=sampled_points)
-        else:
-            paths = tap_processor.process(video_path, clicked_points=sampled_points)
+        paths = layer_processor.process(video_path, clicked_points=sampled_points)
 
         if not paths:
             return gr.update(choices=[], visible=False), None
-
         return gr.update(choices=paths, value=paths[0], visible=True), paths[0]
 
-
-    run_track_btn.click(
-        fn=on_run_tracking,
-        inputs=[input_video, first_frame_editor, tracking_method],
-        outputs=[mask_dropdown, output_video]
-    )
-
-
-    def run_depth_and_hide_ui(video_path):
-        mask_out, video_out = depth_processor.process(video_path)
-        return (
-            mask_out,
-            video_out,
-            gr.update(visible=False),
-            gr.update(visible=False),
-            gr.update(visible=False)
-        )
+    # ЗАКОММЕНТИРОВАЛ вызов SAM
+    # run_sam_btn.click(
+    #     fn=on_run_sam,
+    #     inputs=[input_video, first_frame_editor],
+    #     outputs=[mask_dropdown, output_video]
+    # )
 
     depth_btn.click(
-        fn=run_depth_and_hide_ui,
+        fn=depth_processor.process,
         inputs=[input_video],
-        outputs=[mask_dropdown, output_video, first_frame_editor, run_track_btn, tracking_method]
+        outputs=[mask_dropdown, output_video]
     )
 
     mask_dropdown.change(

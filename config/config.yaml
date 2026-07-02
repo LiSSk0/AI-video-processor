@@ -5,6 +5,6 @@ storage:
 
 models:
   depth:
-    model_name: "depth-anything/Depth-Anything-V2-Small-hf"
+    model_name: "depth-anything/Depth-Anything-V2-Base-hf"
   layer_separation:
     chunk_size: 70
