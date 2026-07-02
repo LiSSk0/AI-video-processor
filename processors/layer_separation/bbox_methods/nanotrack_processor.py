@@ -15,8 +15,8 @@ class NanoTrackSeparationProcessor:
     def __init__(self):
         self.sam2_segmenter = SAM2Segmenter(str(SAM2_CHECKPOINT))
 
-        self.backbone_path = str(NANOTRACK_BACKBONE)
-        self.head_path = str(NANOTRACK_HEAD)
+        self._backbone_path = str(NANOTRACK_BACKBONE)
+        self._head_path = str(NANOTRACK_HEAD)
 
     def process(self, video_path: str, clicked_points: list) -> list[str]:
         start_time = time.time()
@@ -100,8 +100,8 @@ class NanoTrackSeparationProcessor:
         try:
             params = cv2.TrackerNano_Params()
 
-            params.backbone = self.backbone_path
-            params.neckhead = self.head_path
+            params.backbone = self._backbone_path
+            params.neckhead = self._head_path
 
             tracker = cv2.TrackerNano_create(params)
 
