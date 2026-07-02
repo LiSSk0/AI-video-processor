@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import torch
 import logging
+import psutil
 import gradio as gr
 from PIL import Image
 from transformers import pipeline
@@ -16,6 +17,17 @@ logger = logging.getLogger("Depth Anything V2")
 class DeviceType(IntEnum):
     GPU = 0
     CPU = -1
+
+
+def log_resource_usage(stage: str):
+    process = psutil.Process()
+    ram_usage = process.memory_info().rss / (1024 ** 2)  # перевод в МБ
+
+    if torch.cuda.is_available():
+        vram_usage = torch.cuda.max_memory_allocated() / (1024 ** 2)
+        logger.info(f"[{stage}] RAM: {ram_usage:.2f} MB | VRAM Peak: {vram_usage:.2f} MB")
+    else:
+        logger.info(f"[{stage}] RAM: {ram_usage:.2f} MB | VRAM: N/A (CPU mode)")
 
 
 class DepthMapProcessor:
@@ -39,6 +51,7 @@ class DepthMapProcessor:
                     device=DeviceType.GPU
                 )
                 logger.info("The model has been uploaded successfully.")
+                log_resource_usage("Model Loaded")  # сколько памяти заняла модель при загрузке
             except Exception as e:
                 self.depth_pipeline = None
                 logger.error(f"Error loading the model: {e}")
@@ -76,6 +89,8 @@ class DepthMapProcessor:
 
         cap.release()
         out.release()
+
+        log_resource_usage("Processing Finished")  # сколько памяти ушло на пике обработки
         logger.info(f"Processing is completed. The file is saved: {output_video_path}")
 
         return gr.update(visible=False), output_video_path
