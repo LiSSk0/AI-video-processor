@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import torch
 import logging
+import psutil
 import gradio as gr
 from PIL import Image
 from transformers import pipeline
@@ -16,6 +17,17 @@ logger = logging.getLogger("Depth Anything V2")
 class DeviceType(IntEnum):
     GPU = 0
     CPU = -1
+
+
+def log_resource_usage(stage: str):
+    process = psutil.Process()
+    ram_usage = process.memory_info().rss / (1024 ** 2)  # перевод в МБ
+
+    if torch.cuda.is_available():
+        vram_usage = torch.cuda.max_memory_allocated() / (1024 ** 2)
+        logger.info(f"[{stage}] RAM: {ram_usage:.2f} MB | VRAM Peak: {vram_usage:.2f} MB")
+    else:
+        logger.info(f"[{stage}] RAM: {ram_usage:.2f} MB | VRAM: N/A (CPU mode)")
 
 
 class DepthMapProcessor:
@@ -39,6 +51,7 @@ class DepthMapProcessor:
                     device=DeviceType.GPU
                 )
                 logger.info("The model has been uploaded successfully.")
+                log_resource_usage("Model Loaded")  # сколько памяти заняла модель при загрузке
             except Exception as e:
                 self.depth_pipeline = None
                 logger.error(f"Error loading the model: {e}")
@@ -49,7 +62,8 @@ class DepthMapProcessor:
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = cap.get(cv2.CAP_PROP_FPS)
 
-        output_video_path = os.path.join(OUTPUT_DIR, "output_depth_anything_v2.mp4")
+        base_name = os.path.splitext(os.path.basename(video_path))[0]
+        output_video_path = os.path.join(OUTPUT_DIR, f"output_DAv2_{base_name}.mp4")
 
         fourcc = cv2.VideoWriter_fourcc(*'avc1')  # кодек H.264 (AVC). другие: [mp4v, avc1, XVID]
         out = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
@@ -69,13 +83,15 @@ class DepthMapProcessor:
 
             depth_resized = cv2.resize(depth_np, (width, height))
 
-            color_depth = cv2.applyColorMap(depth_resized, cv2.COLORMAP_INFERNO)  # тепловой градиент
-            # color_depth = cv2.cvtColor(depth_resized, cv2.COLOR_GRAY2BGR)  # чб карта
+            # color_depth = cv2.applyColorMap(depth_resized, cv2.COLORMAP_INFERNO)  # тепловой градиент
+            color_depth = cv2.cvtColor(depth_resized, cv2.COLOR_GRAY2BGR)  # чб карта
 
             out.write(color_depth)
 
         cap.release()
         out.release()
+
+        log_resource_usage("Processing Finished")  # сколько памяти ушло на пике обработки
         logger.info(f"Processing is completed. The file is saved: {output_video_path}")
 
         return gr.update(visible=False), output_video_path

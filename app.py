@@ -46,7 +46,8 @@ with gr.Blocks(title="AI Video Processor") as demo:
             )
 
             with gr.Row():
-                split_btn = gr.Button("Separation into layers", variant="primary")
+                # ЗАКОММЕНТИРОВАЛ кнопку разделения, оставил только карту глубины
+                # split_btn = gr.Button("Separation into layers", variant="primary")
                 depth_btn = gr.Button("Building a depth map", variant="primary")
 
             first_frame_editor = gr.ImageEditor(
@@ -71,7 +72,6 @@ with gr.Blocks(title="AI Video Processor") as demo:
             )
             output_video = gr.Video(label="Result")
 
-
     def prepare_layer_separation(video_path):
         if not video_path:
             logger.error("Attempted layer separation without uploading a video.")
@@ -86,22 +86,20 @@ with gr.Blocks(title="AI Video Processor") as demo:
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             return (
                 gr.update(value={"background": frame_rgb, "layers": [], "composite": frame_rgb}, visible=True),
-                gr.update(visible=True),
                 gr.update(visible=True)
             )
         else:
             logger.error(f"Failed to read the first frame from video: {video_path}")
             raise gr.Error("Failed to read the first frame of the video.")
 
+    # ЗАКОММЕНТИРОВАЛ привязку логики SAM к кнопкам
+    # split_btn.click(
+    #     fn=prepare_layer_separation,
+    #     inputs=[input_video],
+    #     outputs=[first_frame_editor, run_sam_btn]
+    # )
 
-    split_btn.click(
-        fn=prepare_layer_separation,
-        inputs=[input_video],
-        outputs=[first_frame_editor, run_track_btn, tracking_method]
-    )
-
-
-    def on_run_tracking(video_path, editor_data, method):
+    def on_run_sam(video_path, editor_data):
         if not editor_data or not editor_data.get("layers"):
             logger.warning("Tracking started but no points were selected.")
             raise gr.Error("Please place at least one red dot on the object!")
@@ -159,9 +157,9 @@ with gr.Blocks(title="AI Video Processor") as demo:
         )
 
     depth_btn.click(
-        fn=run_depth_and_hide_ui,
+        fn=depth_processor.process,
         inputs=[input_video],
-        outputs=[mask_dropdown, output_video, first_frame_editor, run_track_btn, tracking_method]
+        outputs=[mask_dropdown, output_video]
     )
 
     mask_dropdown.change(
