@@ -4,7 +4,10 @@ import torch
 import numpy as np
 import time
 import logging
+import gc
 from torchvision.transforms import ToTensor
+from torch.amp import autocast
+from contextlib import nullcontext
 
 import sys
 from pathlib import Path
@@ -17,33 +20,34 @@ from inference.inference_core import InferenceCore
 from config.config_settings import OUTPUT_DIR, SAM2_CHECKPOINT, XMEM_CHECKPOINT, DEVICE
 from processors.layer_separation.sam2_separation.sam2_segmenter import SAM2Segmenter
 
+torch.backends.cudnn.benchmark = True
+
 logger = logging.getLogger("XMemProcessor")
 
 
 class XMemSeparationProcessor:
-    def __init__(self):
+    def __init__(self, target_size: int = 360):
+        self.target_size = target_size
         self.sam2_segmenter = SAM2Segmenter(str(SAM2_CHECKPOINT))
-        self.device = DEVICE
+        self.device = torch.device(DEVICE) if isinstance(DEVICE, str) else DEVICE
         self.checkpoint_path = str(XMEM_CHECKPOINT)
 
-        # Основной конфиг XMem для инференса
         self.config = {
             'key_dim': 64,
             'value_dim': 512,
             'hidden_dim': 64,
             'single_object': False,
-            'top_k': 30,
-            'mem_every': 5,
+            'top_k': 20,
+            'mem_every': 20,
             'deep_update_every': -1,
             'enable_long_term': True,
             'enable_long_term_count_usage': True,
-            'num_prototypes': 128,
-            'min_mid_term_frames': 5,
-            'max_mid_term_frames': 10,
-            'max_long_term_elements': 10000,
+            'num_prototypes': 24,
+            'min_mid_term_frames': 10,
+            'max_mid_term_frames': 15,
+            'max_long_term_elements': 1500,
         }
 
-        # Загрузка весов XMem
         logger.info(f"Loading XMem checkpoint from {self.checkpoint_path}")
         load_start = time.time()
         self.network = XMem(self.config, self.checkpoint_path, map_location=self.device)
@@ -65,10 +69,17 @@ class XMemSeparationProcessor:
             logger.error("Failed to open video source.")
             return []
 
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        logger.info(f"Video info: {width}x{height}, {fps:.2f} FPS")
+        original_fps = cap.get(cv2.CAP_PROP_FPS)
+        original_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        original_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        logger.info(f"Original video: {original_width}x{original_height}, {original_fps:.2f} FPS")
+
+        scale = self.target_size / min(original_width, original_height)
+        new_width = int(original_width * scale)
+        new_height = int(original_height * scale)
+        new_width = (new_width // 16) * 16
+        new_height = (new_height // 16) * 16
+        logger.info(f"Resized to: {new_width}x{new_height} (target short side = {self.target_size})")
 
         name = Path(video_path).stem
         ext = ".mp4"
@@ -77,8 +88,8 @@ class XMemSeparationProcessor:
         out_object = os.path.join(OUTPUT_DIR, f"{name}_xmem_object{ext}")
 
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        writer_bg = cv2.VideoWriter(out_background, fourcc, fps, (width, height))
-        writer_obj = cv2.VideoWriter(out_object, fourcc, fps, (width, height))
+        writer_bg = cv2.VideoWriter(out_background, fourcc, original_fps, (original_width, original_height))
+        writer_obj = cv2.VideoWriter(out_object, fourcc, original_fps, (original_width, original_height))
 
         ret, first_frame = cap.read()
         if not ret:
@@ -86,40 +97,41 @@ class XMemSeparationProcessor:
             cap.release()
             return []
 
-        # 1. Получение стартовой маски через SAM2
         logger.info("Obtaining initial mask from SAM2...")
         sam_start = time.time()
         rgb_frame = cv2.cvtColor(first_frame, cv2.COLOR_BGR2RGB)
         initial_mask = self.sam2_segmenter.get_image_mask(rgb_frame, clicked_points)
         logger.info(f"SAM2 mask obtained in {time.time() - sam_start:.2f} seconds")
 
-        y_idx, _ = np.where(initial_mask)
-        if len(y_idx) == 0:
+        if np.sum(initial_mask) == 0:
             logger.error("SAM2 could not detect an object for XMem initialization.")
             cap.release()
             return []
 
-        # 2. Инициализация ядра инференса XMem
         logger.info("Initializing XMem InferenceCore...")
         processor = InferenceCore(self.network, config=self.config)
         processor.set_all_labels([1])
 
-        # Преобразование первого кадра и маски
-        frame_tensor = self.im_transform(rgb_frame).to(self.device)
-        mask_tensor = torch.from_numpy(initial_mask.astype(np.float32)).to(self.device)
-        mask_tensor = mask_tensor.unsqueeze(0)
+        first_frame_resized = cv2.resize(rgb_frame, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
+        frame_tensor = self.im_transform(first_frame_resized).to(self.device)
 
-        # Первый шаг с маской
+        mask_resized = cv2.resize(initial_mask.astype(np.float32), (new_width, new_height), interpolation=cv2.INTER_NEAREST)
+        mask_tensor = torch.from_numpy(mask_resized).to(self.device).unsqueeze(0)
+
         logger.info("Processing first frame with mask (initialization)...")
-        prediction = processor.step(frame_tensor, mask_tensor)
-        binary_mask = (prediction[1] > 0.5).cpu().numpy().astype(np.uint8) * 255
-        self._write_layers(first_frame, binary_mask, writer_obj, writer_bg)
+        use_amp = (self.device.type == 'cuda')
+        with autocast(device_type='cuda', enabled=use_amp) if use_amp else nullcontext():
+            prediction = processor.step(frame_tensor, mask_tensor)
 
-        # 3. Цикл по остальным кадрам
+        binary_mask = (prediction[1] > 0.5).cpu().numpy().astype(np.uint8) * 255
+        binary_mask_full = cv2.resize(binary_mask, (original_width, original_height), interpolation=cv2.INTER_NEAREST)
+        self._write_layers(first_frame, binary_mask_full, writer_obj, writer_bg)
+
         frame_count = 1
         logger.info("Starting tracking loop...")
         track_start = time.time()
-        log_interval = max(1, int(fps * 5))  # логировать каждые 5 секунд видео
+        log_interval = max(1, int(original_fps * 5))
+        time_per_frame = []
 
         while True:
             ret, frame = cap.read()
@@ -127,19 +139,35 @@ class XMemSeparationProcessor:
                 break
 
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frame_tensor = self.im_transform(frame_rgb).to(self.device)
+            frame_resized = cv2.resize(frame_rgb, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
+            frame_tensor = self.im_transform(frame_resized).to(self.device)
 
-            prediction = processor.step(frame_tensor)
+            step_start = time.time()
+            with autocast(device_type='cuda', enabled=use_amp) if use_amp else nullcontext():
+                prediction = processor.step(frame_tensor)
+            step_time = time.time() - step_start
+            time_per_frame.append(step_time)
+
             binary_mask = (prediction[1] > 0.5).cpu().numpy().astype(np.uint8) * 255
+            binary_mask_full = cv2.resize(binary_mask, (original_width, original_height), interpolation=cv2.INTER_NEAREST)
+            self._write_layers(frame, binary_mask_full, writer_obj, writer_bg)
 
-            self._write_layers(frame, binary_mask, writer_obj, writer_bg)
             frame_count += 1
 
-            # Логирование прогресса
             if frame_count % log_interval == 0:
+                avg_time = np.mean(time_per_frame[-log_interval:]) if time_per_frame else 0
                 elapsed = time.time() - track_start
                 speed = frame_count / elapsed if elapsed > 0 else 0
-                logger.info(f"Processed {frame_count} frames, speed: {speed:.1f} FPS")
+                logger.info(f"Processed {frame_count} frames, avg time/frame: {avg_time:.3f} s, speed: {speed:.1f} FPS")
+
+            if frame_count % 100 == 0:
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                gc.collect()
+
+                work_size = processor.memory.work_mem.size if hasattr(processor.memory, 'work_mem') else 0
+                long_size = processor.memory.long_mem.size if hasattr(processor.memory, 'long_mem') else 0
+                logger.info(f"Memory: working={work_size} elements, long-term={long_size} elements")
 
         cap.release()
         writer_bg.release()
@@ -148,19 +176,27 @@ class XMemSeparationProcessor:
         total_time = time.time() - total_start
         track_time = time.time() - track_start
         avg_fps = frame_count / track_time if track_time > 0 else 0
+        avg_time_per_frame = np.mean(time_per_frame) if time_per_frame else 0
 
-        logger.info(f"Tracking loop finished: {frame_count} frames processed in {track_time:.2f} s, average {avg_fps:.1f} FPS")
-        logger.info(f"Total processing time (including SAM2 init) : {total_time:.2f} seconds")
+        logger.info(f"Tracking loop finished: {frame_count} frames processed in {track_time:.2f} s, average {avg_fps:.1f} FPS, avg time/frame {avg_time_per_frame:.3f} s")
+        logger.info(f"Total processing time: {total_time:.2f} seconds")
         logger.info(f"Results saved to: {out_object} and {out_background}")
 
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+        gc.collect()
 
         return [out_object, out_background]
 
     def _write_layers(self, frame, mask, writer_obj, writer_bg):
+        if mask.dtype != np.uint8:
+            mask = mask.astype(np.uint8)
+        if mask.ndim == 3:
+            mask = mask[:, :, 0]  # если почему-то 3-канальная, берём первый
+
         obj_layer = cv2.bitwise_and(frame, frame, mask=mask)
-        bg_layer = cv2.bitwise_and(frame, frame, mask=cv2.bitwise_not(mask))
+        bg_mask = cv2.bitwise_not(mask)
+        bg_layer = cv2.bitwise_and(frame, frame, mask=bg_mask)
 
         writer_obj.write(obj_layer)
         writer_bg.write(bg_layer)
