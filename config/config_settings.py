@@ -52,3 +52,5 @@ COTRACKER_GRID_STEP = _ls_config["cotracker"]["grid_step"]
 
 NANOTRACK_BACKBONE = BASE_DIR / _ls_config["nanotrack"]["backbone"]
 NANOTRACK_HEAD = BASE_DIR / _ls_config["nanotrack"]["head"]
+
+XMEM_CHECKPOINT = BASE_DIR / _ls_config["xmem"]["checkpoint"]

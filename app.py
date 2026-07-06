@@ -8,6 +8,7 @@ from processors.depth_map.depth_map import DepthMapProcessor
 from processors.layer_separation.bbox_methods.ostrack_processor import OSTrackSeparationProcessor
 from processors.layer_separation.bbox_methods.nanotrack_processor import NanoTrackSeparationProcessor
 from config.config_settings import APP_SAMPLING_STEP
+from processors.layer_separation.xmem_separation.xmem_processor import XMemSeparationProcessor
 
 from argparse import ArgumentParser
 
@@ -26,6 +27,7 @@ tap_processor = TAPSeparationProcessor()
 depth_processor = DepthMapProcessor()
 ostrack_processor = OSTrackSeparationProcessor()
 nanotrack_processor = NanoTrackSeparationProcessor()
+xmem_processor = XMemSeparationProcessor()
 
 
 with gr.Blocks(title="AI Video Processor") as demo:
@@ -37,7 +39,7 @@ with gr.Blocks(title="AI Video Processor") as demo:
             input_video = gr.Video(label="Move video here")
 
             tracking_method = gr.Radio(
-                choices=["SAM2 Video", "TAP (CoTracker + Convex Hull)", "OSTrack (BBox Tracking)", "NanoTrack"],
+                choices=["SAM2 Video", "TAP (CoTracker + Convex Hull)", "OSTrack (BBox Tracking)", "NanoTrack", "XMem"],
                 value="SAM2 Video",
                 label="Tracking Algorithm Selection",
                 visible=False
@@ -124,6 +126,8 @@ with gr.Blocks(title="AI Video Processor") as demo:
             paths = ostrack_processor.process(video_path, clicked_points=sampled_points)
         elif method == "NanoTrack":
             paths = nanotrack_processor.process(video_path, clicked_points=sampled_points)
+        elif method == "XMem":
+            paths = xmem_processor.process(video_path, clicked_points=sampled_points)
         else:
             paths = []
 
