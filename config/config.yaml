@@ -24,3 +24,6 @@ models:
     nanotrack:
       backbone: "processors/layer_separation/checkpoints/nanotrack_backbone_sim.onnx"
       head: "processors/layer_separation/checkpoints/nanotrack_head_sim.onnx"
+
+    xmem:
+      checkpoint: "processors/layer_separation/checkpoints/XMem-s012.pth"
