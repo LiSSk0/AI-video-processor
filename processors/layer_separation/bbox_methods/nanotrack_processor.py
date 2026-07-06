@@ -86,16 +86,16 @@ class NanoTrackSeparationProcessor:
 
         bbox = (x1, y1, x2 - x1, y2 - y1)
 
-        if not os.path.exists(self.backbone_path):
-            logger.error(f"Backbone file not found: {self.backbone_path}")
-            raise FileNotFoundError(self.backbone_path)
+        if not os.path.exists(self._backbone_path):
+            logger.error(f"Backbone file not found: {self._backbone_path}")
+            raise FileNotFoundError(self._backbone_path)
 
-        if not os.path.exists(self.head_path):
-            logger.error(f"Head file not found: {self.head_path}")
-            raise FileNotFoundError(self.head_path)
+        if not os.path.exists(self._head_path):
+            logger.error(f"Head file not found: {self._head_path}")
+            raise FileNotFoundError(self._head_path)
 
-        logger.info(f"Backbone: {self.backbone_path}")
-        logger.info(f"Head: {self.head_path}")
+        logger.info(f"Backbone: {self._backbone_path}")
+        logger.info(f"Head: {self._head_path}")
 
         try:
             params = cv2.TrackerNano_Params()
