@@ -62,7 +62,8 @@ class DepthMapProcessor:
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = cap.get(cv2.CAP_PROP_FPS)
 
-        output_video_path = os.path.join(OUTPUT_DIR, "output_depth_anything_v2.mp4")
+        base_name = os.path.splitext(os.path.basename(video_path))[0]
+        output_video_path = os.path.join(OUTPUT_DIR, f"output_DAv2_{base_name}.mp4")
 
         fourcc = cv2.VideoWriter_fourcc(*'avc1')  # кодек H.264 (AVC). другие: [mp4v, avc1, XVID]
         out = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
@@ -82,8 +83,8 @@ class DepthMapProcessor:
 
             depth_resized = cv2.resize(depth_np, (width, height))
 
-            color_depth = cv2.applyColorMap(depth_resized, cv2.COLORMAP_INFERNO)  # тепловой градиент
-            # color_depth = cv2.cvtColor(depth_resized, cv2.COLOR_GRAY2BGR)  # чб карта
+            # color_depth = cv2.applyColorMap(depth_resized, cv2.COLORMAP_INFERNO)  # тепловой градиент
+            color_depth = cv2.cvtColor(depth_resized, cv2.COLOR_GRAY2BGR)  # чб карта
 
             out.write(color_depth)
 
