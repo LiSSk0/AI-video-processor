@@ -4,12 +4,7 @@ import numpy as np
 from skimage.metrics import structural_similarity as ssim
 from config.config_settings import OUTPUT_DIR
 
-STANDARD = os.path.join(OUTPUT_DIR, "output_DAv2_3840x2160.mp4")  # эталон
-VIDEOS = [os.path.join(OUTPUT_DIR, "output_DAv2_428x240.mp4"),
-          os.path.join(OUTPUT_DIR, "output_DAv2_640x360.mp4"),
-          os.path.join(OUTPUT_DIR, "output_DAv2_854x480.mp4"),
-          os.path.join(OUTPUT_DIR, "output_DAv2_1280x720.mp4"),
-          os.path.join(OUTPUT_DIR, "output_DAv2_1920x1080.mp4")]
+VIDEOS = [os.path.join(OUTPUT_DIR, "output_DAv2_white_video.mp4")]
 
 
 def calculate_temporal_stability(video_path, model_name):
