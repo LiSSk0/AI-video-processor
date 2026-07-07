@@ -12,9 +12,9 @@ models:
     sampling_step: 10
 
     sam2:
-      checkpoint: "processors/layer_separation/checkpoints/sam2.1_hiera_tiny.pt"
-      model_cfg: "sam2.1/sam2.1_hiera_t.yaml"
-      chunk_size: 70
+      checkpoint: "processors/layer_separation/checkpoints/sam2_hiera_small.pt"
+      model_cfg: "sam2_hiera_s.yaml"
+      chunk_size: 150
 
     cotracker:
       checkpoint: "processors/layer_separation/checkpoints/scaled_offline.pth"

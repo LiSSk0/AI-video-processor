@@ -4,8 +4,10 @@ import gc
 import sam2
 import numpy as np
 import logging
+import shutil
 
 from config.config_settings import DEVICE, SAM2_MODEL_CFG
+from config.config_settings import BASE_DIR
 
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 from sam2.build_sam import build_sam2_video_predictor, build_sam2
@@ -22,10 +24,10 @@ class SAM2Segmenter:
 
     def __init__(self, checkpoint_path: str):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-
         self.device = DEVICE
         self.model_cfg = SAM2_MODEL_CFG
         self.checkpoint_path = checkpoint_path
+        self._ensure_config_file()
 
         sam2_dir = os.path.dirname(os.path.abspath(sam2.__file__))
         config_dir = os.path.join(sam2_dir, "configs")
@@ -38,13 +40,26 @@ class SAM2Segmenter:
             sam_model = build_sam2(self.model_cfg, self.checkpoint_path, device=self.device)
 
         self.mask_generator = SAM2AutomaticMaskGenerator(sam_model)
-
         del sam_model
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
         logger.info("SAM2Segmenter successfully initialized.")
+
+    def _ensure_config_file(self):
+        sam2_dir = os.path.dirname(os.path.abspath(sam2.__file__))
+        target_dir = os.path.join(sam2_dir, "configs")
+        target_file = os.path.join(target_dir, "sam2_hiera_s.yaml")
+
+        if not os.path.exists(target_file):
+            src_file = os.path.join(BASE_DIR, "processors/layer_separation/checkpoints/sam2_hiera_s.yaml")
+            if os.path.exists(src_file):
+                os.makedirs(target_dir, exist_ok=True)
+                shutil.copy2(src_file, target_file)
+                logger.info(f"Copied config file to {target_file}")
+            else:
+                raise FileNotFoundError(f"Config file not found at {src_file}. Please place sam2_hiera_s.yaml in processors/layer_separation/checkpoints/")
 
     def process_video_tracking(self, video_path: str, object_points: list = None):
         logger.info(f"Initializing video tracking state for path: {video_path}")
