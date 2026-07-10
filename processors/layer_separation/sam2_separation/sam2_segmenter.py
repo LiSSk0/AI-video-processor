@@ -23,7 +23,6 @@ logger = logging.getLogger("SAM2Segmenter")
 class SAM2Segmenter:
 
     def __init__(self, checkpoint_path: str):
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = DEVICE
         self.model_cfg = SAM2_MODEL_CFG
         self.checkpoint_path = checkpoint_path
@@ -40,6 +39,9 @@ class SAM2Segmenter:
             sam_model = build_sam2(self.model_cfg, self.checkpoint_path, device=self.device)
 
         self.mask_generator = SAM2AutomaticMaskGenerator(sam_model)
+
+        self.image_predictor = SAM2ImagePredictor(sam_model)
+
         del sam_model
         gc.collect()
         if torch.cuda.is_available():
@@ -90,40 +92,19 @@ class SAM2Segmenter:
         return video_segments, inference_state
 
     def get_image_mask(self, image: np.ndarray, point_coords: list) -> np.ndarray:
-
-        import os
-        import sam2
-        from hydra.core.global_hydra import GlobalHydra
-        from hydra import initialize_config_dir
-
         logger.info("Generating single image mask using SAM2.")
 
-        sam2_dir = os.path.dirname(os.path.abspath(sam2.__file__))
-        config_dir = os.path.join(sam2_dir, "configs")
-
-        if GlobalHydra.instance().is_initialized():
-            GlobalHydra.instance().clear()
-
-        with initialize_config_dir(config_dir=config_dir, version_base="1.2"):
-            sam_model = build_sam2(self.model_cfg, self.checkpoint_path, device=self.device)
-
-        image_predictor = SAM2ImagePredictor(sam_model)
-        image_predictor.set_image(image)
+        # Используем уже готовый self.image_predictor
+        self.image_predictor.set_image(image)
 
         pts = np.array(point_coords, dtype=np.float32)
         labels = np.ones(len(pts), dtype=np.int32)
 
-        masks, scores, _ = image_predictor.predict(
+        masks, scores, _ = self.image_predictor.predict(
             point_coords=pts,
             point_labels=labels,
             multimask_output=False
         )
-
-        del image_predictor
-        del sam_model
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
 
         logger.info("Image mask generation completed successfully.")
         return masks[0] > 0.0

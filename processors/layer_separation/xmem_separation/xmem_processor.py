@@ -26,9 +26,14 @@ logger = logging.getLogger("XMemProcessor")
 
 
 class XMemSeparationProcessor:
-    def __init__(self, target_size: int = 360):
+    def __init__(self, target_size: int = 360, sam2_segmenter=None):
         self.target_size = target_size
-        self.sam2_segmenter = SAM2Segmenter(str(SAM2_CHECKPOINT))
+
+        if sam2_segmenter is not None:
+            self.sam2_segmenter = sam2_segmenter
+        else:
+            self.sam2_segmenter = SAM2Segmenter(str(SAM2_CHECKPOINT))
+
         self.device = torch.device(DEVICE) if isinstance(DEVICE, str) else DEVICE
         self.checkpoint_path = str(XMEM_CHECKPOINT)
 

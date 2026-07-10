@@ -15,8 +15,12 @@ logger = logging.getLogger("TAPSeparationProcessor")
 
 
 class TAPSeparationProcessor:
-    def __init__(self):
-        self.sam2_segmenter = SAM2Segmenter(str(SAM2_CHECKPOINT))
+    def __init__(self, sam2_segmenter=None):
+        if sam2_segmenter is not None:
+            self.sam2_segmenter = sam2_segmenter
+        else:
+            self.sam2_segmenter = SAM2Segmenter(str(SAM2_CHECKPOINT))
+
         self.cotracker = CoTrackerWrapper(str(COTRACKER_CHECKPOINT))
         self.chunk_size = COTRACKER_CHUNK_SIZE
         self.grid_step = COTRACKER_GRID_STEP

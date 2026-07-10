@@ -11,8 +11,11 @@ logger = logging.getLogger("OSTrackProcessor")
 
 
 class OSTrackSeparationProcessor:
-    def __init__(self):
-        self.sam2_segmenter = SAM2Segmenter(str(SAM2_CHECKPOINT))
+    def __init__(self, sam2_segmenter=None):
+        if sam2_segmenter is not None:
+            self.sam2_segmenter = sam2_segmenter
+        else:
+            self.sam2_segmenter = SAM2Segmenter(str(SAM2_CHECKPOINT))
         self.device = DEVICE
 
     def process(self, video_path: str, clicked_points: list) -> list[str]:
@@ -36,20 +39,26 @@ class OSTrackSeparationProcessor:
 
         ret, first_frame = cap.read()
         if not ret:
-            logger.error("Failed to read the first frame.")
+            logger.error("Failed to read first frame.")
+            cap.release()
+            writer_bg.release()
+            writer_obj.release()
             return []
 
-        rgb_frame = cv2.cvtColor(first_frame, cv2.COLOR_BGR2RGB)
-        initial_mask = self.sam2_segmenter.get_image_mask(rgb_frame, clicked_points)
+        logger.info("Extracting initial object mask using SAM2.")
+        mask = self.sam2_segmenter.get_image_mask(first_frame, clicked_points)
+        y_indices, x_indices = np.where(mask)
 
-        y_idx, x_idx = np.where(initial_mask)
-        if len(x_idx) == 0:
-            logger.error("Object not found on the first frame.")
+        if len(x_indices) == 0:
+            logger.error("SAM2 could not find any object for tracking.")
+            cap.release()
+            writer_bg.release()
+            writer_obj.release()
             return []
 
-        x1, y1 = int(np.min(x_idx)), int(np.min(y_idx))
-        x2, y2 = int(np.max(x_idx)), int(np.max(y_idx))
-        bbox = (x1, y1, x2 - x1, y2 - y1)  # (x, y, w, h)
+        x_min, x_max = int(np.min(x_indices)), int(np.max(x_indices))
+        y_min, y_max = int(np.min(y_indices)), int(np.max(y_indices))
+        bbox = (x_min, y_min, x_max - x_min, y_max - y_min)
 
         try:
             tracker = cv2.TrackerVIT_create()

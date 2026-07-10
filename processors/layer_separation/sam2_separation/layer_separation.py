@@ -12,8 +12,11 @@ logger = logging.getLogger("LayerSeparationProcessor")
 
 
 class LayerSeparationProcessor:
-    def __init__(self):
-        self.segmenter = SAM2Segmenter(str(SAM2_CHECKPOINT))
+    def __init__(self, sam2_segmenter=None):
+        if sam2_segmenter is not None:
+            self.segmenter = sam2_segmenter
+        else:
+            self.segmenter = SAM2Segmenter(str(SAM2_CHECKPOINT))
         self.chunk_size = SAM2_CHUNK_SIZE
 
     def process(self, video_path: str, clicked_points: list) -> list[str]:

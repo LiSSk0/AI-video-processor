@@ -22,12 +22,22 @@ def parse_args():
     return parser.parse_args()
 
 
+from processors.layer_separation.sam2_separation.sam2_segmenter import SAM2Segmenter
+from config.config_settings import SAM2_CHECKPOINT
+
+logger.info("Initializing shared SAM2 Segmenter...")
+# Создаем ОДИН экземпляр на все приложение
+shared_sam2 = SAM2Segmenter(str(SAM2_CHECKPOINT))
+
+# Передаем его в конструкторы процессоров
 sam_processor = LayerSeparationProcessor()
-tap_processor = TAPSeparationProcessor()
+sam_processor.segmenter = shared_sam2 # Переиспользуем (или обновите __init__ в LayerSeparationProcessor)
+
+tap_processor = TAPSeparationProcessor(sam2_segmenter=shared_sam2)
 depth_processor = DepthMapProcessor()
-ostrack_processor = OSTrackSeparationProcessor()
-nanotrack_processor = NanoTrackSeparationProcessor()
-xmem_processor = XMemSeparationProcessor()
+ostrack_processor = OSTrackSeparationProcessor(sam2_segmenter=shared_sam2)
+nanotrack_processor = NanoTrackSeparationProcessor(sam2_segmenter=shared_sam2)
+xmem_processor = XMemSeparationProcessor(sam2_segmenter=shared_sam2)
 
 
 with gr.Blocks(title="AI Video Processor") as demo:
