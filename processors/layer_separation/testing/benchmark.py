@@ -42,7 +42,7 @@ METHODS = [
 def get_video_info(video_path):
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
-        raise RuntimeError(f"Не удалось открыть видео: {video_path}")
+        raise RuntimeError(f"Failed to open video file: {video_path}")
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
@@ -114,24 +114,9 @@ def reset_vram_stats():
     gc.collect()
 
 
-def init_models():
-    logger.info("Инициализация моделей...")
-    start = time.time()
-    models = {}
-
-    shared_sam2 = SAM2Segmenter(str(config_settings.SAM2_CHECKPOINT))
-
-    for name, cls, _ in METHODS:
-        logger.info(f"  Загрузка {name}...")
-        models[name] = cls(sam2_segmenter=shared_sam2)
-
-    logger.info(f"Инициализация завершена за {time.time() - start:.2f} сек.")
-    return models
-
-
 def run_benchmark(output_root):
     if not VIDEO_DIR.exists():
-        logger.error(f"Папка с видео не найдена: {VIDEO_DIR}")
+        logger.error(f"Video directory not found: {VIDEO_DIR}")
         return
 
     video_output_dir = Path("output_results")
@@ -164,16 +149,17 @@ def run_benchmark(output_root):
         if pts is not None:
             valid_videos.append((v, pts))
         else:
-            logger.warning(f"Пропускаем {v.name} – нет точек.")
+            logger.warning(f"Skipping {v.name} – no points found.")
 
     if not valid_videos:
-        logger.warning("Нет видео с точками.")
+        logger.warning("No videos with valid point files found.")
         csv_file.close()
         return
 
-    logger.info(f"Найдено видео с точками: {len(valid_videos)}")
+    logger.info(f"Found {len(valid_videos)} video(s) with valid points.")
 
-    models = init_models()
+    logger.info("Initializing shared SAM2 segmenter...")
+    shared_sam2 = SAM2Segmenter(str(config_settings.SAM2_CHECKPOINT))
 
     orig_output_dir = config_settings.OUTPUT_DIR
     orig_temp_dir = config_settings.TEMP_DIR
@@ -183,20 +169,22 @@ def run_benchmark(output_root):
 
     try:
         for video_path, points in valid_videos:
-            logger.info(f"\n=== Обработка видео: {video_path.name} ===")
+            logger.info(f"\n=== Processing video: {video_path.name} ===")
             try:
                 video_info = get_video_info(video_path)
             except Exception as e:
-                logger.error(f"Ошибка получения информации: {e}")
+                logger.error(f"Error retrieving video info: {e}")
                 continue
 
             num_original = len(points)
 
-            for method_name, _, max_points in METHODS:
-                logger.info(f"  Метод {method_name}...")
-                processor = models[method_name]
-                limited = limit_points(points, max_points)
-                num_used = len(limited)
+            # Find the minimum allowed points across all methods to ensure an identical dataset for comparison
+            min_allowed_points = min(max_pts for _, _, max_pts in METHODS)
+            limited = limit_points(points, min_allowed_points)
+            num_used = len(limited)
+
+            for method_name, cls, _ in METHODS:
+                logger.info(f"  Running method: {method_name}...")
 
                 row = {
                     "video_name": video_path.name,
@@ -222,9 +210,18 @@ def run_benchmark(output_root):
                     "output_files_created": 0,
                 }
 
+                processor = None
                 try:
+                    # Clean up GPU context before initialization to get an accurate baseline
                     reset_vram_stats()
+
+                    # Target processor is initialized dynamically inside the loop
+                    processor = cls(sam2_segmenter=shared_sam2)
+
                     ram_before, vram_before = get_memory_usage()
+
+                    if torch.cuda.is_available():
+                        torch.cuda.synchronize()
                     start_time = time.perf_counter()
 
                     result_paths = processor.process(
@@ -232,12 +229,15 @@ def run_benchmark(output_root):
                         clicked_points=limited
                     )
 
+                    if torch.cuda.is_available():
+                        torch.cuda.synchronize()
                     end_time = time.perf_counter()
+
                     ram_after, vram_after = get_memory_usage()
                     vram_peak = get_max_vram_mb()
 
                     if not result_paths:
-                        raise RuntimeError("Метод вернул пустой список.")
+                        raise RuntimeError("Processor returned an empty file list.")
 
                     kept = []
                     for f in video_output_dir.glob(f"*{video_path.stem}*{method_name}*.mp4"):
@@ -250,7 +250,7 @@ def run_benchmark(output_root):
                             kept.append(str(f))
 
                     if not kept:
-                        raise RuntimeError("Не найдено выходных файлов с объектом.")
+                        raise RuntimeError("No output object files found.")
 
                     valid_files = [p for p in kept if Path(p).exists() and Path(p).stat().st_size > 0]
 
@@ -265,35 +265,40 @@ def run_benchmark(output_root):
                     row["output_files_created"] = len(valid_files)
                     row["status"] = "success"
 
-                    logger.info(f"    Успешно за {row['time_sec']:.2f} сек, файлов: {len(valid_files)}")
+                    logger.info(
+                        f"    Success: finished in {row['time_sec']:.2f} sec, files created: {len(valid_files)}")
 
                 except Exception as e:
                     row["status"] = "fail"
                     row["error_message"] = traceback.format_exc()
-                    logger.error(f"    Ошибка: {e}")
+                    logger.error(f"    Error processing with {method_name}: {e}")
 
                 finally:
+                    # Explicitly remove the processor object and clean memory
+                    if processor is not None:
+                        del processor
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
                     gc.collect()
+
                     writer.writerow(row)
                     csv_file.flush()
 
-            logger.info(f"Видео {video_path.name} обработано.\n")
+            logger.info(f"Finished processing video: {video_path.name}\n")
 
     except KeyboardInterrupt:
-        logger.info("Прервано пользователем.")
+        logger.info("Benchmark interrupted by user.")
     finally:
         config_settings.OUTPUT_DIR = orig_output_dir
         config_settings.TEMP_DIR = orig_temp_dir
         csv_file.close()
-        logger.info(f"Результаты сохранены в {csv_path}")
+        logger.info(f"Results successfully saved to {csv_path}")
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output_root", type=Path, default=Path("benchmark_results"),
-                        help="Папка для сохранения CSV-отчётов")
+                        help="Directory to save CSV reports")
     args = parser.parse_args()
     run_benchmark(args.output_root)
 
