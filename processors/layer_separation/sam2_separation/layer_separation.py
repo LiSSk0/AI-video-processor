@@ -118,7 +118,7 @@ class LayerSeparationProcessor:
 
             while len(video_writers) < num_masks:
                 layer_idx = len(video_writers) + 1
-                fourcc = cv2.VideoWriter_fourcc(*'avc1')
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
                 out_path = os.path.join(OUTPUT_DIR, f"{meta['name']}_layer_{layer_idx}{meta['ext']}")
                 writer = cv2.VideoWriter(out_path, fourcc, meta["fps"], (meta["width"], meta["height"]))
                 video_writers.append(writer)

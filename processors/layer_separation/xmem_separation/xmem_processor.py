@@ -38,19 +38,19 @@ class XMemSeparationProcessor:
         self.checkpoint_path = str(XMEM_CHECKPOINT)
 
         self.config = {
-            'key_dim': 64,
-            'value_dim': 512,
-            'hidden_dim': 64,
-            'single_object': False,
-            'top_k': 20,
-            'mem_every': 20,
-            'deep_update_every': -1,
-            'enable_long_term': True,
-            'enable_long_term_count_usage': True,
-            'num_prototypes': 24,
-            'min_mid_term_frames': 10,
-            'max_mid_term_frames': 15,
-            'max_long_term_elements': 1500,
+            'key_dim': 64,  # Размерность ключей для поиска в памяти
+            'value_dim': 512,  # Размерность значений (признаков объекта)
+            'hidden_dim': 64,  # Размерность скрытых слоёв сети памяти
+            'single_object': False,  # Режим множественных объектов (не один)
+            'top_k': 20,  # Извлекать топ-20 похожих элементов из памяти
+            'mem_every': 20,  # Добавлять кадр в память каждые 20 кадров
+            'deep_update_every': -1,  # Глубокое обновление памяти отключено (-1)
+            'enable_long_term': True,  # Включить долгосрочную память
+            'enable_long_term_count_usage': True,  # Учитывать частоту использования элементов
+            'num_prototypes': 24,  # Количество прототипов в долгосрочной памяти
+            'min_mid_term_frames': 10,  # Минимум кадров в среднесрочной памяти
+            'max_mid_term_frames': 15,  # Максимум кадров в среднесрочной памяти
+            'max_long_term_elements': 1500,  # Максимум элементов в долгосрочной памяти
         }
 
         logger.info(f"Loading XMem checkpoint from {self.checkpoint_path}")
