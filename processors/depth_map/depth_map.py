@@ -1,4 +1,97 @@
-def depth_map(video_path):
-    if video_path is None:
-        return None
-    return video_path
+import os
+import cv2
+import numpy as np
+import torch
+import logging
+import psutil
+import gradio as gr
+from PIL import Image
+from transformers import pipeline
+from sys import exit
+from enum import IntEnum
+from config.config_settings import OUTPUT_DIR, DEPTH_MODEL_NAME
+
+logger = logging.getLogger("Depth Anything V2")
+
+
+class DeviceType(IntEnum):
+    GPU = 0
+    CPU = -1
+
+
+def log_resource_usage(stage: str):
+    process = psutil.Process()
+    ram_usage = process.memory_info().rss / (1024 ** 2)  # перевод в МБ
+
+    if torch.cuda.is_available():
+        vram_usage = torch.cuda.max_memory_allocated() / (1024 ** 2)
+        logger.info(f"[{stage}] RAM: {ram_usage:.2f} MB | VRAM Peak: {vram_usage:.2f} MB")
+    else:
+        logger.info(f"[{stage}] RAM: {ram_usage:.2f} MB | VRAM: N/A (CPU mode)")
+
+
+class DepthMapProcessor:
+    def __init__(self):
+        self.depth_pipeline = None
+
+    def process(self, video_path: str) -> (gr.update, str):
+        if not video_path:
+            raise gr.Error("Wrong video path.")
+
+        if self.depth_pipeline is None:
+            if not torch.cuda.is_available():
+                logger.error("CUDA is not available.")
+                raise gr.Error("CUDA is not available.")
+
+            try:
+                logger.info("Loading the model...")
+                self.depth_pipeline = pipeline(
+                    task="depth-estimation",
+                    model=DEPTH_MODEL_NAME,
+                    device=DeviceType.GPU
+                )
+                logger.info("The model has been uploaded successfully.")
+                log_resource_usage("Model Loaded")  # сколько памяти заняла модель при загрузке
+            except Exception as e:
+                self.depth_pipeline = None
+                logger.error(f"Error loading the model: {e}")
+                raise gr.Error(f"Error loading the model: {e}")
+
+        cap = cv2.VideoCapture(video_path)
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+
+        base_name = os.path.splitext(os.path.basename(video_path))[0]
+        output_video_path = os.path.join(OUTPUT_DIR, f"output_DAv2_{base_name}.mp4")
+
+        fourcc = cv2.VideoWriter_fourcc(*'avc1')  # кодек H.264 (AVC). другие: [mp4v, avc1, XVID]
+        out = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
+
+        logger.info(f"Video processing has started: {video_path}")
+
+        while cap.isOpened():
+            is_successfully_read, frame = cap.read()
+            if not is_successfully_read:
+                break
+
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            pil_img = Image.fromarray(frame_rgb)
+
+            result = self.depth_pipeline(pil_img)
+            depth_np = np.array(result["depth"])
+
+            depth_resized = cv2.resize(depth_np, (width, height))
+
+            # color_depth = cv2.applyColorMap(depth_resized, cv2.COLORMAP_INFERNO)  # тепловой градиент
+            color_depth = cv2.cvtColor(depth_resized, cv2.COLOR_GRAY2BGR)  # чб карта
+
+            out.write(color_depth)
+
+        cap.release()
+        out.release()
+
+        log_resource_usage("Processing Finished")  # сколько памяти ушло на пике обработки
+        logger.info(f"Processing is completed. The file is saved: {output_video_path}")
+
+        return gr.update(visible=False), output_video_path
